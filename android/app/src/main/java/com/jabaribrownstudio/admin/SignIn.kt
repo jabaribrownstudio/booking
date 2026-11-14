@@ -2,7 +2,13 @@ package com.jabaribrownstudio.admin
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -30,7 +36,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.KeyboardType
@@ -51,11 +56,15 @@ fun SignInScreen(vm: MainViewModel) {
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Spacer(Modifier.height(32.dp))
-        Image(
-            painter = painterResource(R.drawable.logo), contentDescription = AppConfig.BUSINESS,
-            modifier = Modifier.size(width = 200.dp, height = 100.dp), contentScale = ContentScale.Fit,
-            colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.onBackground)
-        )
+        Box(
+            modifier = Modifier.fillMaxWidth(0.72f).clip(RoundedCornerShape(24.dp)).background(Color.White).padding(horizontal = 22.dp, vertical = 18.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Image(
+                painter = painterResource(R.drawable.logo), contentDescription = AppConfig.BUSINESS,
+                modifier = Modifier.fillMaxWidth().aspectRatio(462f / 224f), contentScale = ContentScale.Fit
+            )
+        }
         Spacer(Modifier.height(20.dp))
         Text("JB Studio Admin", style = MaterialTheme.typography.headlineMedium)
         Text(
