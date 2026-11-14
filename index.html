@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Book a Session</title>
+  <meta name="description" content="Book your photography session online.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link id="font-link" href="https://fonts.googleapis.com/css2?family=Raleway:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <main class="shell" id="app">
+    <header class="hero" id="hero">
+      <p class="eyebrow">Book online</p>
+      <h1 id="biz-name">Book a session</h1>
+      <p class="tagline" id="tagline"></p>
+      <a id="ig-follow" class="chip-link" target="_blank" rel="noopener" hidden></a>
+    </header>
+
+    <nav id="progress-nav" aria-label="Booking progress">
+      <ol class="progress" id="progress">
+        <li data-step="1"><button type="button" class="pstep"><span class="seg"></span><span class="plabel"><span class="pnum">1</span><span class="ptext">Package</span></span></button></li>
+        <li data-step="2"><button type="button" class="pstep"><span class="seg"></span><span class="plabel"><span class="pnum">2</span><span class="ptext">Date &amp; time</span></span></button></li>
+        <li data-step="3"><button type="button" class="pstep"><span class="seg"></span><span class="plabel"><span class="pnum">3</span><span class="ptext">Details</span></span></button></li>
+      </ol>
+    </nav>
+
+    <div class="stage">
+      <div class="layout" id="layout" data-step="1">
+        <section class="main" id="main">
+          <div class="notice" id="notice" role="alert" hidden></div>
+
+          <section class="step" id="step-1" aria-labelledby="t1">
+            <h2 class="step-title" id="t1" tabindex="-1">Choose your session</h2>
+            <p class="step-sub">Pick a package. Next, you'll choose a date and time.</p>
+            <div class="pk-wrap"><div class="packages" id="packages"></div></div>
+          </section>
+
+          <section class="step" id="step-2" aria-labelledby="t2" hidden>
+            <h2 class="step-title" id="t2" tabindex="-1">Pick a date &amp; time</h2>
+            <p class="step-sub" id="s2-sub"></p>
+            <div class="soonest" id="soonest-wrap" hidden>
+              <span class="mini-label">Soonest available</span>
+              <div class="chips" id="soonest"></div>
+            </div>
+            <div class="datetime" id="datetime">
+              <div class="card cal">
+                <div class="cal-head">
+                  <button type="button" class="icon-btn" id="prev" aria-label="Previous month"><span data-ic="arrowL"></span></button>
+                  <strong id="cal-title"></strong>
+                  <button type="button" class="icon-btn" id="next" aria-label="Next month"><span data-ic="arrowR"></span></button>
+                </div>
+                <div class="grid7 dow" id="dow" aria-hidden="true"></div>
+                <div class="grid7" id="days"></div>
+              </div>
+              <div class="card slots-card" id="slots-card">
+                <h3 id="slots-title">Available times</h3>
+                <p class="muted" id="slots-note" aria-live="polite">Choose a date to see open times.</p>
+                <div id="slots"></div>
+              </div>
+            </div>
+          </section>
+
+          <section class="step" id="step-3" aria-labelledby="t3" hidden>
+            <h2 class="step-title" id="t3" tabindex="-1">Your details</h2>
+            <p class="step-sub">Last step. We use these to confirm your session.</p>
+            <div class="review" id="review"></div>
+            <form id="form" class="card form-card" novalidate>
+              <div class="fields">
+                <div class="field">
+                  <label for="f-first">First name</label>
+                  <input class="input" id="f-first" name="firstName" autocomplete="given-name" aria-describedby="e-first" required>
+                  <p class="field-error" id="e-first" aria-live="polite"></p>
+                </div>
+                <div class="field">
+                  <label for="f-last">Last name</label>
+                  <input class="input" id="f-last" name="lastName" autocomplete="family-name" aria-describedby="e-last" required>
+                  <p class="field-error" id="e-last" aria-live="polite"></p>
+                </div>
+                <div class="field">
+                  <label for="f-email">Email</label>
+                  <input class="input" id="f-email" name="email" type="email" inputmode="email" autocomplete="email" autocapitalize="none" aria-describedby="e-email" required>
+                  <p class="field-error" id="e-email" aria-live="polite"></p>
+                </div>
+                <div class="field">
+                  <label for="f-phone">Phone / WhatsApp</label>
+                  <input class="input" id="f-phone" name="phone" type="tel" inputmode="tel" autocomplete="tel" aria-describedby="e-phone" required>
+                  <p class="field-error" id="e-phone" aria-live="polite"></p>
+                </div>
+                <div class="field">
+                  <label for="f-ig">Instagram <span class="opt">(optional)</span></label>
+                  <div class="prefix"><span aria-hidden="true">@</span><input class="input" id="f-ig" name="instagram" autocomplete="off" autocapitalize="none" placeholder="yourhandle"></div>
+                </div>
+                <div class="field wide">
+                  <label for="f-loc">Location <span class="opt">(optional)</span></label>
+                  <input class="input" id="f-loc" name="location" autocomplete="off" placeholder="Where would you like to shoot?">
+                </div>
+                <div class="field wide">
+                  <label for="f-notes">Anything we should know? <span class="opt">(optional)</span></label>
+                  <textarea class="input" id="f-notes" name="notes" rows="3" placeholder="Occasion, outfit ideas, number of people"></textarea>
+                </div>
+              </div>
+              <input type="text" name="website" class="hp" tabindex="-1" autocomplete="off" aria-hidden="true">
+            </form>
+          </section>
+
+          <section class="step" id="done" hidden></section>
+
+          <div class="actions" id="actions" hidden>
+            <div class="mini" id="mini"></div>
+            <div class="btns">
+              <button type="button" class="btn ghost back" id="back" aria-label="Back"><span data-ic="arrowL"></span><span class="bl">Back</span></button>
+              <button type="button" class="btn primary" id="to-3" disabled><span>Continue</span><span data-ic="arrowR"></span></button>
+              <button type="submit" form="form" class="btn primary" id="submit" hidden><span class="lbl">Request booking</span><span class="spin" aria-hidden="true"></span></button>
+            </div>
+          </div>
+        </section>
+
+        <aside class="card summary" id="summary" aria-label="Your booking">
+          <h3>Your session</h3>
+          <dl>
+            <div><dt>Package</dt><dd id="sum-pkg"></dd></div>
+            <div><dt>Date</dt><dd id="sum-date"></dd></div>
+            <div><dt>Time</dt><dd id="sum-time"></dd></div>
+          </dl>
+          <div class="total"><span>Total</span><strong id="sum-total">&mdash;</strong></div>
+          <p class="fine">No payment is taken online. We confirm your request by email.</p>
+        </aside>
+      </div>
+    </div>
+
+    <section class="insta" id="insta" hidden>
+      <h2>Recent work</h2>
+      <div class="insta-grid" id="insta-grid"></div>
+    </section>
+
+    <footer class="foot" id="foot"></footer>
+  </main>
+
+  <script src="js/config.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
