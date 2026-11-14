@@ -10,7 +10,7 @@ window.BOOKING_CONFIG = {
   accentDark: "#c5ccd1",          // accent used when the visitor's device is in dark mode (a dark accent would be invisible on a dark background)
 
   // Instagram (no @). Leave "" to hide Instagram features.
-  instagramHandle: "yourhandle",
+  instagramHandle: "jabaribrownstudio",
   // Optional: public post URLs to show in a "Recent work" section.
   // e.g. "https://www.instagram.com/p/ABC123/"
   instagramPosts: [],
