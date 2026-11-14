@@ -20,7 +20,7 @@ window.BOOKING_CONFIG = {
   endpoint: "https://script.google.com/macros/s/AKfycbzo4dqwhycjgYWCMlBHgU4Dkc_UmEBYuUCWGRY8lm_Vw_fjRadBpFkx8RbcL7klE618/exec",
   // OPTIONAL: Cloudflare Worker address for username + password sign-in to the admin app (see worker/ and the README).
   // Leave empty to use the simple admin key sign-in instead.
-  authWorker: "",
+  authWorker: "https://booking-auth.jabaribrownstudio.workers.dev/",
   sessionMinutes: 30,             // admin app signs out after this many idle minutes (Cloudflare sign-in only)
   ownerEmail: "you@example.com",  // used by the no-backend fallback
 
