@@ -15,6 +15,7 @@ var CONFIG = {
   BUSINESS_NAME: "Jabari Brown Studio",
   SHEET_NAME: "Bookings",
   SEND_CLIENT_EMAIL: true,
+  SEND_STATUS_EMAIL: true,          // email the client when you Confirm or Cancel their booking
 
   // ---- Admin app (your phone) ----
   // A long secret only you know (20+ letters/numbers). You type it into the admin app once.
@@ -390,8 +391,7 @@ function createBooking_(d, admin, by) {
 
   // Emails: clients get the full set. Bookings you add yourself only email the client if you ask for it.
   var when = d.date + " at " + niceTime_(d.time) + " (" + duration + " min)";
-  try {
-    if (!admin) {
+  if (!admin) try {
       MailApp.sendEmail({
         to: CONFIG.OWNER_EMAIL,
         replyTo: email,
@@ -399,9 +399,10 @@ function createBooking_(d, admin, by) {
         body: "New booking request\n\nPackage: " + row[6] + " (" + row[7] + ")\nWhen: " + when +
           "\nName: " + name + "\nEmail: " + email + "\nPhone: " + phone +
           "\nInstagram: " + row[5] + "\nLocation: " + row[12] + "\nNotes: " + row[13] +
-          "\nSource: " + (row[14] || "website") + "\n\nOpen the sheet or the admin app to confirm or cancel."
+          "\nSource: " + (row[14] || "website") + "\n\nOpen the Studio Admin app or the sheet to confirm or cancel."
       });
-    }
+  } catch (mailErr) { console.error("Owner mail error: " + mailErr); }
+  try {
     if (emailOk && ((!admin && CONFIG.SEND_CLIENT_EMAIL) || (admin && d.notifyClient))) {
       MailApp.sendEmail({
         to: email,
@@ -430,8 +431,44 @@ function onStatusEdit(e) {
     if (!e || !e.range) return;
     var sh = e.range.getSheet();
     if (sh.getName() !== CONFIG.SHEET_NAME || e.range.getColumn() !== COL.STATUS || e.range.getRow() < 2) return;
+    var now = String(e.range.getValue());
+    if (String(e.oldValue || "") !== now) sendStatusEmail_(sh, e.range.getRow());
     syncCalendar_(sh, e.range.getRow());
   } catch (err) { console.error("onStatusEdit: " + err); }
+}
+
+/** Emails the client when a booking is Confirmed or Cancelled. */
+function sendStatusEmail_(sh, row) {
+  try {
+    if (!CONFIG.SEND_STATUS_EMAIL) return;
+    var v = sh.getRange(row, 1, 1, HEADERS.length).getValues()[0];
+    var status = String(v[COL.STATUS - 1]), email = String(v[COL.EMAIL - 1] || "");
+    if ((status !== "Confirmed" && status !== "Cancelled") || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return;
+    var name = String(v[COL.NAME - 1]), first = name.split(" ")[0];
+    var when = niceDate_(String(v[COL.DATE - 1])) + " at " + niceTime_(String(v[COL.START - 1]));
+    var body = status === "Confirmed"
+      ? "Hi " + first + ",\n\nGood news: your session is confirmed.\n\n" + v[COL.PACKAGE - 1] + "\n" + when +
+        (v[12] ? "\nLocation: " + v[12] : "") + "\n\nReply to this email if anything needs to change.\n\nSee you then!\n– " + CONFIG.BUSINESS_NAME
+      : "Hi " + first + ",\n\nYour booking for " + v[COL.PACKAGE - 1] + " on " + when +
+        " has been cancelled.\n\nIf you'd like to rebook or have any questions, just reply to this email.\n\n– " + CONFIG.BUSINESS_NAME;
+    MailApp.sendEmail({
+      to: email, replyTo: CONFIG.OWNER_EMAIL, name: CONFIG.BUSINESS_NAME,
+      subject: (status === "Confirmed" ? "Your session is confirmed – " : "Your booking was cancelled – ") + CONFIG.BUSINESS_NAME,
+      body: body
+    });
+  } catch (err) { console.error("sendStatusEmail_: " + err); }
+}
+
+function niceDate_(d) {
+  var p = d.split("-");
+  if (p.length !== 3) return d;
+  return Utilities.formatDate(new Date(+p[0], +p[1] - 1, +p[2]), Session.getScriptTimeZone(), "EEEE, d MMMM yyyy");
+}
+
+/** Run this once from the editor to check that emails work. It also triggers the permission prompt. */
+function testEmail() {
+  MailApp.sendEmail(CONFIG.OWNER_EMAIL, "Test from your booking app", "If you can read this, booking alerts are working.");
+  console.log("Sent a test email to " + CONFIG.OWNER_EMAIL);
 }
 
 /** Makes the calendar event for a Bookings row match its Status. */
@@ -512,8 +549,10 @@ function adminApi_(d) {
     case "admin_status": {
       var sh = getSheet_(), row = parseInt(d.row, 10);
       if (!(row >= 2 && row <= sh.getLastRow()) || ["Pending", "Confirmed", "Cancelled"].indexOf(d.status) < 0) return { ok: false, error: "invalid_input" };
+      var before = String(sh.getRange(row, COL.STATUS).getValue());
       sh.getRange(row, COL.STATUS).setValue(d.status);
       sh.getRange(row, COL.HANDLED).setValue(me.name);
+      if (before !== d.status && d.notifyClient !== false) sendStatusEmail_(sh, row);
       syncCalendar_(sh, row);
       return { ok: true };
     }
