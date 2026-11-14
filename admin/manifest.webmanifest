@@ -8,6 +8,12 @@
   "orientation": "portrait",
   "background_color": "#ffffff",
   "theme_color": "#3a4046",
+  "shortcuts": [
+    { "name": "Upcoming bookings", "short_name": "Upcoming", "url": "./?view=upcoming", "icons": [{ "src": "icon-192.png", "sizes": "192x192", "type": "image/png" }] },
+    { "name": "Pending bookings", "short_name": "Pending", "url": "./?view=pending", "icons": [{ "src": "icon-192.png", "sizes": "192x192", "type": "image/png" }] },
+    { "name": "Add a booking", "short_name": "Add booking", "url": "./?add=1", "icons": [{ "src": "icon-192.png", "sizes": "192x192", "type": "image/png" }] },
+    { "name": "Availability", "short_name": "Availability", "url": "./?tab=hours", "icons": [{ "src": "icon-192.png", "sizes": "192x192", "type": "image/png" }] }
+  ],
   "icons": [
     { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
     { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },

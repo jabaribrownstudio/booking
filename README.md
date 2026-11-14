@@ -57,6 +57,12 @@ A second app, at `/admin/`, lets you run everything from your Android phone: see
 2. Make sure `endpoint` in `js/config.js` is set to your Web app URL, and push to GitHub.
 3. On your phone, open `https://YOUR-USERNAME.github.io/booking/admin/` in Chrome, enter your key, then use the Chrome menu (three dots) and choose **Install app** (or **Add to Home screen**). It then opens full screen from your home screen like a normal app.
 
+**On a computer:** open the same address in Chrome or Edge on your desktop and sign in with the same key. The page switches to a wide layout with a side menu, and it refreshes itself every minute while open. Everything stays in sync with your phone. In Chrome or Edge you can also click the install icon in the address bar to get it as a desktop app.
+
+**Long-press shortcuts:** once installed, long-press the app icon on your Android home screen for quick links to Upcoming, Pending, Add booking and Availability.
+
+**Home-screen widget:** a web app can't draw a real Android widget, but every booking is also added to your Google Calendar. Long-press your home screen, choose Widgets, pick the **Google Calendar** widget (the Schedule or Agenda list) and it shows your upcoming appointments, updating by itself. Cancelled bookings disappear from it. Bookings are titled like `[Confirmed] Silver – Maya Henry`, so you can see what is still `[Pending]`. If you set `CALENDAR_ID` to a separate calendar, make sure that calendar is ticked in the Google Calendar app.
+
 Keep the key private. It is saved only on your phone, and **Sign out** (top right) removes it. To change it, edit `ADMIN_KEY`, redeploy, and sign in again. The admin page is not linked from your booking page, and anyone without the key sees only the sign-in screen.
 
 ## Google Calendar reminders

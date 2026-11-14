@@ -1,6 +1,6 @@
 // Lets the admin app open instantly and load even with a weak connection.
 // Booking data is never cached: it always comes live from your Google Sheet.
-const CACHE = "studio-admin-v1";
+const CACHE = "studio-admin-v2";
 const SHELL = ["./", "index.html", "admin.css", "admin.js", "../js/config.js", "../images/logo.png", "icon-192.png"];
 self.addEventListener("install", (e) => { e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting())); });
 self.addEventListener("activate", (e) => {

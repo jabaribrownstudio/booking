@@ -46,7 +46,7 @@
       if (!j || !j.ok) { toast("Couldn't load your data.", true); return false; }
       S.bookings = j.bookings; S.off = j.off; S.settings = j.settings; S.loaded = true;
       if (!S.hoursDirty) S.hours = JSON.parse(JSON.stringify(j.hours));
-      renderAll(); return true;
+      renderAll(); deepLink(); return true;
     } catch (e) { fail(e); if (!S.loaded) $("list").innerHTML = '<div class="empty">Couldn\'t load bookings.<br>Pull the refresh button to try again.</div>'; return false; }
   }
 
@@ -73,12 +73,12 @@
   $("refresh").addEventListener("click", async () => { if (await load(true)) toast("Up to date"); });
 
   /* ---------- tabs ---------- */
-  $("tabs").addEventListener("click", (e) => {
-    const b = e.target.closest("button[data-t]"); if (!b) return;
-    document.querySelectorAll("#tabs button").forEach((x) => x.classList.toggle("on", x === b));
-    ["bookings", "hours", "settings"].forEach((t) => { $("tab-" + t).hidden = t !== b.dataset.t; });
-    $("fab").hidden = b.dataset.t !== "bookings"; window.scrollTo(0, 0);
-  });
+  function selectTab(name) {
+    document.querySelectorAll("#tabs button").forEach((x) => x.classList.toggle("on", x.dataset.t === name));
+    ["bookings", "hours", "settings"].forEach((t) => { $("tab-" + t).hidden = t !== name; });
+    $("fab").hidden = name !== "bookings"; window.scrollTo(0, 0);
+  }
+  $("tabs").addEventListener("click", (e) => { const b = e.target.closest("button[data-t]"); if (b) selectTab(b.dataset.t); });
 
   /* ---------- bookings ---------- */
   function visible() {
@@ -266,8 +266,19 @@
   });
 
   /* ---------- start ---------- */
+  // Home-screen shortcuts (long-press the app icon): ?view=pending, ?tab=hours, ?add=1
+  let deepLinked = false;
+  function deepLink() {
+    if (deepLinked) return; deepLinked = true;
+    const q = new URLSearchParams(location.search), view = q.get("view"), tab = q.get("tab");
+    if (["upcoming", "pending", "past", "cancelled"].indexOf(view) > -1) { S.filter = view; renderBookings(); }
+    if (tab === "hours" || tab === "settings") selectTab(tab);
+    if (q.get("add") === "1") openSheet();
+  }
   function renderAll() { renderBookings(); renderWeek(); renderOff(); renderSettings(); }
   if ("serviceWorker" in navigator && location.protocol.indexOf("http") === 0) navigator.serviceWorker.register("sw.js").catch(() => {});
   document.addEventListener("visibilitychange", () => { if (!document.hidden && key && S.loaded) load(true); });
+  // Keep a desktop tab fresh while it is open and visible
+  setInterval(() => { if (!document.hidden && key && S.loaded && $("sheet").hidden) load(true); }, 60000);
   if (key) showApp(); else showLogin();
 })();

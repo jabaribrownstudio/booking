@@ -50,11 +50,13 @@
     </section>
 
     <section id="tab-hours" hidden>
+      <div class="cols"><div>
       <h2>Weekly hours</h2>
       <p class="muted">The times clients can book. Add a second period for a lunch break.</p>
       <div id="week" class="card"></div>
       <button class="btn primary block" id="save-hours" type="button" disabled>Save weekly hours</button>
 
+      </div><div>
       <h2>Days off and blocked time</h2>
       <p class="muted">Leave From and To empty to block the whole day.</p>
       <form id="off-form" class="card grid2">
@@ -66,6 +68,7 @@
         <button class="btn block span2" type="submit" id="off-add">Block this time</button>
       </form>
       <ul id="off-list" class="offlist"></ul>
+      </div></div>
     </section>
 
     <section id="tab-settings" hidden>
