@@ -33,6 +33,7 @@
   <header class="top">
     <img class="logo" src="../images/logo.png" alt="Jabari Brown Studio">
     <div class="top-actions">
+      <span class="who" id="who"></span>
       <button class="icon-btn" id="refresh" type="button" aria-label="Refresh"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v5h-5"/></svg></button>
       <button class="icon-btn" id="signout" type="button" aria-label="Sign out"><svg viewBox="0 0 24 24"><path d="M9 4H5v16h4M16 8l4 4-4 4M20 12H9"/></svg></button>
     </div>
@@ -84,14 +85,28 @@
         <button class="btn primary block" type="submit" id="save-set">Save settings</button>
       </form>
     </section>
+
+    <section id="tab-team" hidden>
+      <h2>Team</h2>
+      <p class="muted">People who can sign in to this app. <b>Staff</b> can see, confirm, cancel and add bookings. <b>Managers</b> can also change your availability and settings. Only you can manage the team.</p>
+      <div id="team-list"></div>
+      <h2>Add someone</h2>
+      <form id="team-form" class="card">
+        <label>Name<input type="text" id="t-name" maxlength="60" autocomplete="off" required></label>
+        <label>Role<select id="t-role"><option value="Staff">Staff</option><option value="Manager">Manager</option></select></label>
+        <p class="err" id="team-err" role="alert"></p>
+        <button class="btn primary block" type="submit" id="team-add">Create sign-in key</button>
+      </form>
+    </section>
   </main>
 
   <button class="fab" id="fab" type="button" aria-label="Add a booking"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg><span>Add booking</span></button>
 
   <nav class="tabs" id="tabs">
     <button type="button" data-t="bookings" class="on"><svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>Bookings</button>
-    <button type="button" data-t="hours"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3 2"/></svg>Availability</button>
-    <button type="button" data-t="settings"><svg viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg>Settings</button>
+    <button type="button" data-t="hours" id="tab-hours-btn"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3 2"/></svg>Availability</button>
+    <button type="button" data-t="team" id="tab-team-btn" hidden><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-5.5 6-5.5s6 2.2 6 5.5M16 5.2a3.2 3.2 0 0 1 0 5.6M18 14.8c1.8.7 3 2.4 3 5.2"/></svg>Team</button>
+    <button type="button" data-t="settings" id="tab-settings-btn"><svg viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg>Settings</button>
   </nav>
 </div>
 
@@ -117,6 +132,17 @@
     <p class="err" id="add-err" role="alert"></p>
     <button class="btn primary block" type="submit" id="add-btn">Add booking</button>
   </form>
+</div>
+
+<div id="keybox" class="sheet" hidden>
+  <div class="sheet-bg" data-closekey></div>
+  <div class="sheet-card">
+    <div class="sheet-head"><h2 id="key-title">Sign-in key</h2><button type="button" class="icon-btn" data-closekey aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+    <p class="muted">Send this key to <b id="key-name"></b> privately. <b>It is shown only once.</b> If it gets lost, just make a new key.</p>
+    <div class="keyshow" id="key-val"></div>
+    <div class="acts"><button type="button" class="btn primary" id="copy-key">Copy key</button><button type="button" class="btn" id="copy-invite">Copy invitation message</button></div>
+    <button type="button" class="btn block" style="margin-top:14px" data-closekey>Done</button>
+  </div>
 </div>
 
 <div id="toast" class="toast" role="status" aria-live="polite"></div>

@@ -8,7 +8,7 @@
 
   let key = "";
   try { key = localStorage.getItem(KEY_STORE) || ""; } catch (e) { /* private mode */ }
-  const S = { bookings: [], hours: null, off: [], settings: null, filter: "upcoming", open: null, hoursDirty: false, loaded: false };
+  const S = { me: null, staff: [], bookings: [], hours: null, off: [], settings: null, filter: "upcoming", open: null, hoursDirty: false, loaded: false };
 
   /* ---------- helpers ---------- */
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -35,6 +35,7 @@
     } catch (e) { throw new Error("network"); }
     let j; try { j = await res.json(); } catch (e) { throw new Error("bad_response"); }
     if (j && j.error === "unauthorized") { signOut(); throw new Error("unauthorized"); }
+    if (j && j.error === "forbidden") toast("You don't have permission to do that.", true);
     return j;
   }
   const fail = (e) => { if (e.message === "unauthorized") return; toast(e.message === "network" ? "Can't reach the server. Check your connection." : e.message === "no_endpoint" ? "Set the Web app URL (endpoint) in js/config.js first." : "Something went wrong. Try again.", true); };
@@ -44,7 +45,9 @@
     try {
       const j = await api("admin_list");
       if (!j || !j.ok) { toast("Couldn't load your data.", true); return false; }
-      S.bookings = j.bookings; S.off = j.off; S.settings = j.settings; S.loaded = true;
+      S.bookings = j.bookings; S.off = j.off; S.settings = j.settings; S.me = j.me || { name: "", role: "Staff" }; S.loaded = true;
+      applyRole();
+      if (S.me.role === "Owner") loadTeam();
       if (!S.hoursDirty) S.hours = JSON.parse(JSON.stringify(j.hours));
       renderAll(); deepLink(); return true;
     } catch (e) { fail(e); if (!S.loaded) $("list").innerHTML = '<div class="empty">Couldn\'t load bookings.<br>Pull the refresh button to try again.</div>'; return false; }
@@ -53,7 +56,7 @@
   /* ---------- login ---------- */
   function showLogin() { $("app").hidden = true; $("login").hidden = false; }
   function showApp() { $("login").hidden = true; $("app").hidden = false; load(); }
-  function signOut() { key = ""; try { localStorage.removeItem(KEY_STORE); } catch (e) { /* ignore */ } S.loaded = false; showLogin(); }
+  function signOut() { key = ""; S.me = null; S.staff = []; try { localStorage.removeItem(KEY_STORE); } catch (e) { /* ignore */ } S.loaded = false; showLogin(); }
   $("login-form").addEventListener("submit", async (e) => {
     e.preventDefault(); const btn = $("login-btn"); $("login-err").textContent = "";
     key = $("key").value.trim(); if (!key) return;
@@ -74,11 +77,67 @@
 
   /* ---------- tabs ---------- */
   function selectTab(name) {
+    if (can[name] && !can[name]()) name = "bookings";
     document.querySelectorAll("#tabs button").forEach((x) => x.classList.toggle("on", x.dataset.t === name));
-    ["bookings", "hours", "settings"].forEach((t) => { $("tab-" + t).hidden = t !== name; });
+    ["bookings", "hours", "settings", "team"].forEach((t) => { $("tab-" + t).hidden = t !== name; });
     $("fab").hidden = name !== "bookings"; window.scrollTo(0, 0);
   }
   $("tabs").addEventListener("click", (e) => { const b = e.target.closest("button[data-t]"); if (b) selectTab(b.dataset.t); });
+
+  /* ---------- roles ---------- */
+  const can = { hours: () => S.me && S.me.role !== "Staff", settings: () => S.me && S.me.role !== "Staff", team: () => S.me && S.me.role === "Owner", bookings: () => true };
+  function applyRole() {
+    $("who").textContent = S.me ? (S.me.role === "Owner" ? "Owner" : S.me.name + " · " + S.me.role) : "";
+    $("tab-hours-btn").hidden = !can.hours(); $("tab-settings-btn").hidden = !can.settings(); $("tab-team-btn").hidden = !can.team();
+    const cur = document.querySelector("#tabs button.on");
+    if (cur && cur.hidden) selectTab("bookings");
+  }
+
+  /* ---------- team (owner only) ---------- */
+  async function loadTeam() {
+    try { const j = await api("admin_staff_list"); if (j && j.ok) { S.staff = j.staff; renderTeam(); } } catch (e) { /* shown elsewhere */ }
+  }
+  function renderTeam() {
+    $("team-list").innerHTML = S.staff.length ? S.staff.map((m) =>
+      '<div class="member" data-row="' + m.row + '"><div class="member-top"><div><div class="member-name">' + esc(m.name) + "</div><small>Added " + esc(m.added || "") + "</small></div>" +
+      '<span class="pill ' + (m.active ? esc(m.role) : "Locked") + '">' + (m.active ? esc(m.role) : "Locked out") + "</span></div>" +
+      '<div class="acts"><button type="button" class="btn sm" data-m="role">Make ' + (m.role === "Staff" ? "Manager" : "Staff") + '</button>' +
+      '<button type="button" class="btn sm" data-m="reset">New key</button>' +
+      '<button type="button" class="btn sm" data-m="active">' + (m.active ? "Lock out" : "Unlock") + '</button>' +
+      '<button type="button" class="btn sm bad" data-m="remove">Remove</button></div></div>').join("")
+      : '<div class="empty">No team members yet. Add your first one below.</div>';
+  }
+  let lastKey = null;
+  function showKey(name, k) {
+    lastKey = { name, key: k }; $("key-title").textContent = "Sign-in key created"; $("key-name").textContent = name; $("key-val").textContent = k; $("keybox").hidden = false;
+  }
+  async function copy(text, ok) {
+    try { await navigator.clipboard.writeText(text); toast(ok); }
+    catch (e) { const ta = document.createElement("textarea"); ta.value = text; document.body.appendChild(ta); ta.select(); try { document.execCommand("copy"); toast(ok); } catch (x) { toast("Couldn't copy. Select the key and copy it.", true); } ta.remove(); }
+  }
+  $("copy-key").addEventListener("click", () => lastKey && copy(lastKey.key, "Key copied"));
+  $("copy-invite").addEventListener("click", () => lastKey && copy("Hi " + lastKey.name.split(" ")[0] + ", here is your sign-in for the " + (C.businessName || "studio") + " booking app.\nOpen: " + location.origin + location.pathname + "\nYour key: " + lastKey.key + "\nKeep it private, and don't share it.", "Message copied"));
+  $("keybox").addEventListener("click", (e) => { if (e.target.closest("[data-closekey]")) { $("keybox").hidden = true; lastKey = null; $("key-val").textContent = ""; } });
+  $("team-form").addEventListener("submit", async (e) => {
+    e.preventDefault(); const name = $("t-name").value.trim(); $("team-err").textContent = ""; if (!name) return;
+    const btn = $("team-add"); btn.disabled = true;
+    try { const j = await api("admin_staff_add", { name, role: $("t-role").value });
+      if (j.ok) { $("team-form").reset(); showKey(j.name, j.key); loadTeam(); } else $("team-err").textContent = "Couldn't add that person. Try again.";
+    } catch (err) { fail(err); }
+    btn.disabled = false;
+  });
+  $("team-list").addEventListener("click", async (e) => {
+    const b = e.target.closest("[data-m]"); if (!b) return;
+    const row = +b.closest(".member").dataset.row, m = S.staff.find((x) => x.row === row), act = b.dataset.m;
+    let call;
+    if (act === "role") call = () => api("admin_staff_update", { row, role: m.role === "Staff" ? "Manager" : "Staff" });
+    else if (act === "active") { if (m.active && !confirm("Lock " + m.name + " out? They'll be signed out straight away.")) return; call = () => api("admin_staff_update", { row, active: !m.active }); }
+    else if (act === "remove") { if (!confirm("Remove " + m.name + "? Their key stops working. Bookings they handled keep their name.")) return; call = () => api("admin_staff_remove", { row }); }
+    else if (act === "reset") { if (!confirm("Make a new key for " + m.name + "? The old key stops working.")) return; call = async () => { const j = await api("admin_staff_reset", { row }); if (j.ok) showKey(j.name, j.key); return j; }; }
+    b.disabled = true;
+    try { const j = await call(); if (!j.ok && j.error !== "forbidden") toast("Couldn't do that. Try again.", true); } catch (err) { fail(err); }
+    loadTeam();
+  });
 
   /* ---------- bookings ---------- */
   function visible() {
@@ -122,6 +181,7 @@
     if (b.location) dl += "<dt>Location</dt><dd>" + esc(b.location) + "</dd>";
     if (b.notes) dl += "<dt>Notes</dt><dd>" + esc(b.notes) + "</dd>";
     if (b.source) dl += "<dt>Source</dt><dd>" + esc(b.source) + "</dd>";
+    if (b.handledBy) dl += "<dt>Handled by</dt><dd>" + esc(b.handledBy) + "</dd>";
     let acts = "";
     if (b.status !== "Confirmed") acts += '<button type="button" class="btn sm ok" data-set="Confirmed">Confirm</button>';
     if (b.status === "Confirmed") acts += '<button type="button" class="btn sm" data-set="Pending">Mark pending</button>';

@@ -57,6 +57,14 @@ A second app, at `/admin/`, lets you run everything from your Android phone: see
 2. Make sure `endpoint` in `js/config.js` is set to your Web app URL, and push to GitHub.
 3. On your phone, open `https://YOUR-USERNAME.github.io/booking/admin/` in Chrome, enter your key, then use the Chrome menu (three dots) and choose **Install app** (or **Add to Home screen**). It then opens full screen from your home screen like a normal app.
 
+**Staff logins:** you (the owner) sign in with `ADMIN_KEY`. Everyone else gets their own key. In the admin app, open the **Team** tab (only you see it), enter the person's name, choose a role and tap **Create sign-in key**. The key is shown once, with buttons to copy it or a ready-made invitation message to send them. Roles:
+
+- **Staff:** see, confirm, cancel and add bookings. They don't see Availability, Settings or Team.
+- **Manager:** everything Staff can do, plus Availability and Settings.
+- **Owner (you):** everything, plus the Team tab.
+
+You can change someone's role, make them a new key (the old one stops working), lock them out or remove them. This takes effect straight away, even if they are signed in. Keys are stored scrambled in a **Staff** tab in your Sheet, so nobody can read them there. Each booking records who handled it (a **Handled by** column and a line in the booking details). To switch this on, paste the new `Code.gs`, redeploy as a new version, and open the Team tab. The Staff tab is created automatically.
+
 **On a computer:** open the same address in Chrome or Edge on your desktop and sign in with the same key. The page switches to a wide layout with a side menu, and it refreshes itself every minute while open. Everything stays in sync with your phone. In Chrome or Edge you can also click the install icon in the address bar to get it as a desktop app.
 
 **Long-press shortcuts:** once installed, long-press the app icon on your Android home screen for quick links to Upcoming, Pending, Add booking and Availability.

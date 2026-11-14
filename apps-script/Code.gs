@@ -41,13 +41,13 @@ var CONFIG = {
   DEFAULT_SETTINGS: { slotInterval: 30, bufferMinutes: 30, minNoticeHours: 24, maxDaysAhead: 90 }
 };
 
-var TAB = { AVAIL: "Availability", OFF: "Time off", SETTINGS: "Settings" };
+var TAB = { AVAIL: "Availability", OFF: "Time off", SETTINGS: "Settings", STAFF: "Staff" };
 var DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 var HEADERS = ["Timestamp", "Status", "Name", "Email", "Phone", "Instagram", "Package", "Price",
-               "Date", "Start", "End", "Duration (min)", "Location", "Notes", "Source", "Event ID"];
+               "Date", "Start", "End", "Duration (min)", "Location", "Notes", "Source", "Event ID", "Handled by"];
 // Column numbers (1-based)
-var COL = { STATUS: 2, NAME: 3, EMAIL: 4, PACKAGE: 7, DATE: 9, START: 10, END: 11, EVENT: 16 };
+var COL = { STATUS: 2, NAME: 3, EMAIL: 4, PACKAGE: 7, DATE: 9, START: 10, END: 11, EVENT: 16, HANDLED: 17 };
 
 function getSheet_() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -136,6 +136,8 @@ function setup() {
     st.setColumnWidth(1, 260); st.setColumnWidth(3, 520);
   }
 
+  ensureStaffTab_(ss);
+
   // --- Triggers: replace ours, leave any others alone ---
   ScriptApp.getProjectTriggers().forEach(function (t) {
     var fn = t.getHandlerFunction();
@@ -146,6 +148,25 @@ function setup() {
     ScriptApp.newTrigger("sendClientReminders").timeBased().everyDays(1).atHour(CONFIG.CLIENT_REMINDER_HOUR).create();
   }
   if (CONFIG.CALENDAR_ID) getCalendar_(); // forces the calendar permission prompt now
+}
+
+/** Creates the Staff tab if it doesn't exist yet (people who can sign in to the admin app). Keys are stored scrambled. */
+function ensureStaffTab_(ss) {
+  var sf = ss.getSheetByName(TAB.STAFF);
+  if (sf) return sf;
+  sf = ss.insertSheet(TAB.STAFF);
+  sf.getRange(1, 1, 1, 5).setValues([["Name", "Role", "Key (scrambled)", "Active", "Added"]]).setFontWeight("bold");
+  sf.setFrozenRows(1);
+  sf.setColumnWidth(1, 160); sf.setColumnWidth(3, 260);
+  sf.getRange("G1:G4").setValues([
+    ["Managed from the admin app"],
+    ["Add and remove staff in the admin app's Team tab (owner only). You normally never edit this tab."],
+    ["Keys are saved scrambled, so nobody can read them here. Set Active to No to lock someone out."],
+    ["Only share this Google Sheet with people you trust. Staff only need the admin app, not the Sheet."]
+  ]);
+  sf.getRange("G1").setFontWeight("bold");
+  sf.setColumnWidth(7, 520);
+  return sf;
 }
 
 function json_(obj) {
@@ -309,7 +330,7 @@ function doPost(e) {
  * Admin bookings can be Confirmed straight away, may skip email/phone, and may fall outside
  * your opening hours (you decide), but they still can't overlap another booking unless d.force is true.
  */
-function createBooking_(d, admin) {
+function createBooking_(d, admin, by) {
   var name = clean_(d.firstName && d.lastName ? d.firstName + " " + d.lastName : d.name, 100);
   var email = clean_(d.email, 150), phone = clean_(d.phone, 40);
   var emailOk = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email);
@@ -344,7 +365,7 @@ function createBooking_(d, admin) {
   var sh = getSheet_();
   var row = [new Date(), status, name, email, phone, clean_(d.instagram, 60), clean_(d.packageName, 80),
              clean_(d.currency, 5) + clean_(d.price, 12), d.date, d.time, fromMin_(end), duration,
-             clean_(d.location, 200), clean_(d.notes, 1000), admin ? "Admin app" : clean_(d.source, 40), ""];
+             clean_(d.location, 200), clean_(d.notes, 1000), admin ? "Admin app" : clean_(d.source, 40), "", admin ? clean_(by || "", 60) : ""];
   sh.appendRow(row);
   var r = sh.getLastRow();
   [COL.DATE, COL.START, COL.END].forEach(function (c) { sh.getRange(r, c).setNumberFormat("@").setValue(row[c - 1]); });
@@ -439,25 +460,60 @@ var BOUNDS = { slotInterval: [5, 240], bufferMinutes: [0, 480], minNoticeHours: 
 var SETTING_LABELS = { slotInterval: "Slot interval (minutes)", bufferMinutes: "Buffer between sessions (minutes)",
                        minNoticeHours: "Minimum notice (hours)", maxDaysAhead: "Days clients can book ahead" };
 
+var OWNER_ONLY = { admin_staff_list: 1, admin_staff_add: 1, admin_staff_update: 1, admin_staff_reset: 1, admin_staff_remove: 1 };
+var MANAGER_UP = { admin_hours: 1, admin_off_add: 1, admin_off_remove: 1, admin_settings: 1 };
+
+function hash_(s) {
+  return Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, s, Utilities.Charset.UTF_8)
+    .map(function (b) { return ("0" + ((b + 256) % 256).toString(16)).slice(-2); }).join("");
+}
+function normKey_(k) { return String(k || "").replace(/[\s-]/g, "").toLowerCase(); }
+function newKey_() {
+  var raw = (Utilities.getUuid() + Utilities.getUuid()).replace(/-/g, "").slice(0, 24);
+  return raw.match(/.{4}/g).join("-");
+}
+
+/** Rows of the Staff tab: { row, name, role, hash, active }. */
+function staffRows_() {
+  return rows_(TAB.STAFF, 5).map(function (r, i) {
+    return { row: i + 2, name: String(r.d[0]), role: String(r.d[1]) === "Manager" ? "Manager" : "Staff",
+             hash: String(r.d[2]), active: String(r.d[3]).toLowerCase() !== "no", added: String(r.d[4]) };
+  }).filter(function (s) { return s.name; });
+}
+
+/** Who is this key? { name, role } or null. The owner key (ADMIN_KEY) is the Owner; everyone else is in the Staff tab. */
+function authenticate_(key) {
+  key = String(key || "");
+  var owner = String(CONFIG.ADMIN_KEY || "");
+  if (owner.length >= 8 && owner !== "change-this-to-a-long-secret" && key === owner) return { name: "Owner", role: "Owner" };
+  var norm = normKey_(key);
+  if (norm.length < 16) return null;
+  var h = hash_(norm), found = null;
+  staffRows_().forEach(function (s) { if (s.active && s.hash === h) found = { name: s.name, role: s.role }; });
+  return found;
+}
+
 function adminApi_(d) {
-  var key = String(CONFIG.ADMIN_KEY || "");
-  if (key.length < 8 || key === "change-this-to-a-long-secret" || String(d.key || "") !== key) {
-    Utilities.sleep(1500); // slows down anyone guessing the key
+  var me = authenticate_(d.key);
+  if (!me) {
+    Utilities.sleep(1500); // slows down anyone guessing a key
     return { ok: false, error: "unauthorized" };
   }
+  if ((OWNER_ONLY[d.action] && me.role !== "Owner") || (MANAGER_UP[d.action] && me.role === "Staff")) return { ok: false, error: "forbidden" };
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   switch (d.action) {
-    case "admin_list": return adminList_();
+    case "admin_list": { var lst = adminList_(); lst.me = me; return lst; }
 
     case "admin_status": {
       var sh = getSheet_(), row = parseInt(d.row, 10);
       if (!(row >= 2 && row <= sh.getLastRow()) || ["Pending", "Confirmed", "Cancelled"].indexOf(d.status) < 0) return { ok: false, error: "invalid_input" };
       sh.getRange(row, COL.STATUS).setValue(d.status);
+      sh.getRange(row, COL.HANDLED).setValue(me.name);
       syncCalendar_(sh, row);
       return { ok: true };
     }
 
-    case "admin_add": return createBooking_(d, true);
+    case "admin_add": return createBooking_(d, true, me.name);
 
     case "admin_hours": {
       var av = ss.getSheetByName(TAB.AVAIL);
@@ -496,6 +552,40 @@ function adminApi_(d) {
       return { ok: true };
     }
 
+    case "admin_staff_list": return { ok: true, staff: staffRows_().map(function (s) { return { row: s.row, name: s.name, role: s.role, active: s.active, added: s.added }; }) };
+
+    case "admin_staff_add": {
+      var nm = clean_(d.name, 60), role = d.role === "Manager" ? "Manager" : "Staff";
+      var stf = ensureStaffTab_(ss);
+      if (!nm) return { ok: false, error: "invalid_input" };
+      var k1 = newKey_();
+      stf.appendRow([nm, role, hash_(normKey_(k1)), "Yes", Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd")]);
+      return { ok: true, key: k1, name: nm };
+    }
+
+    case "admin_staff_update": {
+      var st2 = ss.getSheetByName(TAB.STAFF), r2 = parseInt(d.row, 10);
+      if (!st2 || !(r2 >= 2 && r2 <= st2.getLastRow())) return { ok: false, error: "invalid_input" };
+      if (d.role === "Manager" || d.role === "Staff") st2.getRange(r2, 2).setValue(d.role);
+      if (d.active === true || d.active === false) st2.getRange(r2, 4).setValue(d.active ? "Yes" : "No");
+      return { ok: true };
+    }
+
+    case "admin_staff_reset": {
+      var st3 = ss.getSheetByName(TAB.STAFF), r3 = parseInt(d.row, 10);
+      if (!st3 || !(r3 >= 2 && r3 <= st3.getLastRow())) return { ok: false, error: "invalid_input" };
+      var k2 = newKey_();
+      st3.getRange(r3, 3).setValue(hash_(normKey_(k2)));
+      return { ok: true, key: k2, name: String(st3.getRange(r3, 1).getValue()) };
+    }
+
+    case "admin_staff_remove": {
+      var st4 = ss.getSheetByName(TAB.STAFF), r4 = parseInt(d.row, 10);
+      if (!st4 || !(r4 >= 2 && r4 <= st4.getLastRow())) return { ok: false, error: "invalid_input" };
+      st4.deleteRow(r4);
+      return { ok: true };
+    }
+
     case "admin_settings": {
       var st = ss.getSheetByName(TAB.SETTINGS);
       if (!st || !d.settings) return { ok: false, error: "invalid_input" };
@@ -526,7 +616,7 @@ function adminList_() {
       var ts = Object.prototype.toString.call(r[0]) === "[object Date]" ? Utilities.formatDate(r[0], tz, "yyyy-MM-dd HH:mm") : String(r[0]);
       bookings.push({ row: i + 2, created: ts, status: String(r[1]), name: String(r[2]), email: String(r[3]), phone: String(r[4]),
         instagram: String(r[5]), pkg: String(r[6]), price: String(r[7]), date: String(r[8]), start: String(r[9]), end: String(r[10]),
-        duration: r[11], location: String(r[12]), notes: String(r[13]), source: String(r[14]) });
+        duration: r[11], location: String(r[12]), notes: String(r[13]), source: String(r[14]), handledBy: String(r[16] || "") });
     });
   }
   var off = [];
