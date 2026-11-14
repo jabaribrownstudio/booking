@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="ic_launcher_bg">#2B3036</color>
+    <color name="widget_bg">#FFFFFF</color>
+    <color name="widget_card">#F1F3F5</color>
+    <color name="widget_text">#1B1F23</color>
+    <color name="widget_sub">#5C6670</color>
+    <color name="widget_accent">#3A4046</color>
+    <color name="widget_ok">#1E7B4F</color>
+    <color name="widget_wait">#A86A00</color>
+</resources>
