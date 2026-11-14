@@ -4,7 +4,7 @@
 window.BOOKING_CONFIG = {
   businessName: "Jabari Brown Studio",
   logo: "images/logo.png",         // shown in the page header instead of the name. Use "" to show the name as text
-  tagline: "Portraits, weddings, events & brand photography",
+  tagline: "Moments, beautifully kept.",
   fontFamily: "Raleway",           // any Google Font name; can be overridden with ?font=Name in the URL
   accent: "#3a4046",              // main brand colour (dark grey). Can be overridden with ?accent=hex in the URL
   accentDark: "#c5ccd1",          // accent used when the visitor's device is in dark mode (a dark accent would be invisible on a dark background)
