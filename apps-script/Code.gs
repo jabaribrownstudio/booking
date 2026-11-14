@@ -12,7 +12,7 @@
 
 var CONFIG = {
   OWNER_EMAIL: "you@example.com",   // where booking alerts are sent
-  BUSINESS_NAME: "Your Studio Name",
+  BUSINESS_NAME: "Jabari Brown Studio",
   SHEET_NAME: "Bookings",
   SEND_CLIENT_EMAIL: true,
 

@@ -2,7 +2,8 @@
  * EDIT THIS FILE to customise your booking app. No other file needs changing.
  */
 window.BOOKING_CONFIG = {
-  businessName: "Your Studio Name",
+  businessName: "Jabari Brown Studio",
+  logo: "images/logo.png",         // shown in the page header instead of the name. Use "" to show the name as text
   tagline: "Portraits, weddings, events & brand photography",
   fontFamily: "Raleway",           // any Google Font name; can be overridden with ?font=Name in the URL
   accent: "#3a4046",              // main brand colour (dark grey). Can be overridden with ?accent=hex in the URL

@@ -486,7 +486,12 @@
   /* ---------- wire up ---------- */
   document.querySelectorAll("[data-ic]").forEach((el) => { el.innerHTML = ic(el.dataset.ic); });
   document.title = "Book a session – " + C.businessName;
-  $("biz-name").textContent = C.businessName;
+  if (C.logo) {
+    const img = document.createElement("img");
+    img.src = C.logo; img.alt = C.businessName; img.className = "logo";
+    img.addEventListener("load", postHeight);
+    $("biz-name").textContent = ""; $("biz-name").appendChild(img);
+  } else $("biz-name").textContent = C.businessName;
   $("tagline").textContent = C.tagline || "";
   if (handleName()) {
     const a = $("ig-follow");

@@ -281,3 +281,8 @@ textarea.input { min-height: 96px; resize: vertical; }
   *, *::before, *::after { animation: none !important; transition: none !important; }
   .ticket .badge path { stroke-dashoffset: 0; }
 }
+
+/* studio logo (black artwork on transparent): shown as is in light mode, inverted in dark mode */
+.hero h1 .logo { display: block; width: clamp(180px, 42vw, 280px); height: auto; margin: 0 auto; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .hero h1 .logo { filter: invert(1); } }
+:root[data-theme="dark"] .hero h1 .logo { filter: invert(1); }
