@@ -26,8 +26,56 @@
   let toastTimer;
   function toast(msg, bad) { const t = $("toast"); t.textContent = msg; t.className = "toast show" + (bad ? " bad" : ""); clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.className = "toast"; }, 3200); }
 
+  /* ---------- Cloudflare Worker sign-in (username + password) ---------- */
+  const W = (C.authWorker || "").replace(/\/+$/, "");
+  const IDLE_MS = (C.sessionMinutes || 30) * 60000;
+  let CRED = null; // { u, hash }: lives in memory only, never written to storage
+  let lastActive = Date.now(), afterPw = null, afterSecret = null;
+  const signedIn = () => (W ? !!CRED : !!key);
+  const b64 = (buf) => { let s = ""; new Uint8Array(buf).forEach((x) => { s += String.fromCharCode(x); }); return btoa(s); };
+  const unb64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+  async function hashPw(pw, saltB64) { // PBKDF2, SHA-256, 150,000 rounds, 256 bits (the Worker expects exactly this)
+    const k = await crypto.subtle.importKey("raw", new TextEncoder().encode(pw), "PBKDF2", false, ["deriveBits"]);
+    return b64(await crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt: unb64(saltB64), iterations: 150000 }, k, 256));
+  }
+  async function newPw(pw) { const salt = b64(crypto.getRandomValues(new Uint8Array(16))); return { salt, hash: await hashPw(pw, salt) }; }
+  async function wpost(path, body) {
+    let res; try { res = await fetch(W + path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); } catch (e) { throw new Error("network"); }
+    let j = null; try { j = await res.json(); } catch (e) { /* not JSON */ }
+    return { status: res.status, j: j || {} };
+  }
+  const waitText = (j) => { const s = j.retryAfter || 60; return s >= 90 ? Math.ceil(s / 60) + " minutes" : s + " seconds"; };
+  const genPw = () => { const A = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789"; return Array.from(crypto.getRandomValues(new Uint8Array(12)), (x) => A[x % A.length]).join(""); };
+  function pwProblem(pw, pw2, user) {
+    if (pw.length < 10) return "Use at least 10 characters.";
+    if (user && pw.toLowerCase().indexOf(String(user).toLowerCase()) > -1) return "The password can't contain the username.";
+    if (pw !== pw2) return "The two passwords don't match.";
+    return "";
+  }
+  async function wteam(op, extra) {
+    if (!CRED) { signOut(); throw new Error("unauthorized"); }
+    const r = await wpost("/team", Object.assign({}, extra || {}, { u: CRED.u, hash: CRED.hash, op }));
+    if (r.status === 401) { signOut("Your sign-in is no longer valid. Please sign in again."); throw new Error("unauthorized"); }
+    if (r.status === 429) { toast("Too many attempts. Try again in " + waitText(r.j) + ".", true); return { ok: false, error: "locked" }; }
+    if (r.j.error === "forbidden") toast("You don't have permission to do that.", true);
+    return r.j;
+  }
+  // Idle timeout: any tap or key press counts as activity (checked every 30 seconds)
+  ["pointerdown", "keydown"].forEach((ev) => document.addEventListener(ev, () => { if (Date.now() - lastActive > 5000) lastActive = Date.now(); }, { passive: true }));
+  setInterval(() => { if (W && CRED && Date.now() - lastActive > IDLE_MS) signOut("You were signed out after " + Math.round(IDLE_MS / 60000) + " minutes of inactivity."); }, 30000);
+
   /* ---------- API ---------- */
   async function api(action, data) {
+    if (W) {
+      if (!CRED) { signOut(); throw new Error("unauthorized"); }
+      const r = await wpost("/api", Object.assign({}, data || {}, { u: CRED.u, hash: CRED.hash, action }));
+      if (r.status === 401) { signOut("Your sign-in is no longer valid. Please sign in again."); throw new Error("unauthorized"); }
+      if (r.status === 429) { toast("Too many attempts. Try again in " + waitText(r.j) + ".", true); return { ok: false, error: "locked" }; }
+      if (r.j.error === "must_change") { openPw(true, () => load()); return { ok: false, error: "must_change" }; }
+      if (r.status === 502) { toast("The booking sheet didn't respond. Try again.", true); return { ok: false, error: "backend" }; }
+      if (r.j.error === "forbidden") toast("You don't have permission to do that.", true);
+      return r.j;
+    }
     if (!C.endpoint) throw new Error("no_endpoint");
     let res;
     try {
@@ -54,9 +102,24 @@
   }
 
   /* ---------- login ---------- */
-  function showLogin() { $("app").hidden = true; $("login").hidden = false; }
-  function showApp() { $("login").hidden = true; $("app").hidden = false; load(); }
-  function signOut() { key = ""; S.me = null; S.staff = []; try { localStorage.removeItem(KEY_STORE); } catch (e) { /* ignore */ } S.loaded = false; showLogin(); }
+  const LEADS = { "login-form": "Enter your admin key to manage bookings and your availability.", "pw-form": "Sign in to manage bookings and your availability.",
+    "setup-form": "First time here? Create the owner account. You'll need the setup code you saved in Cloudflare.", "recover-form": "Use the recovery code you saved when you created the owner account." };
+  function loginMode(mode) {
+    ["login-form", "pw-form", "setup-form", "recover-form"].forEach((id) => { $(id).hidden = id !== mode; });
+    $("login-lead").textContent = LEADS[mode]; $("login-foot").hidden = mode !== "login-form";
+    ["login-err", "pw-err", "setup-err", "recover-err"].forEach((id) => { $(id).textContent = ""; });
+  }
+  function showLogin(note) {
+    $("app").hidden = true; $("login").hidden = false;
+    $("login-note").hidden = !note; $("login-note").textContent = note || "";
+    loginMode(W ? (S.empty ? "setup-form" : "pw-form") : "login-form");
+  }
+  function showApp() { $("login").hidden = true; $("app").hidden = false; $("chpw").hidden = !W; load(); }
+  function signOut(note) {
+    key = ""; CRED = null; S.me = null; S.staff = [];
+    try { localStorage.removeItem(KEY_STORE); } catch (e) { /* ignore */ }
+    S.loaded = false; S.hoursDirty = false; $("pwbox").hidden = true; $("keybox").hidden = true; showLogin(typeof note === "string" ? note : "");
+  }
   $("login-form").addEventListener("submit", async (e) => {
     e.preventDefault(); const btn = $("login-btn"); $("login-err").textContent = "";
     key = $("key").value.trim(); if (!key) return;
@@ -71,6 +134,88 @@
       else $("login-err").textContent = "Can't reach the server. Check your connection.";
     }
     btn.disabled = false; btn.textContent = "Sign in";
+  });
+
+  /* ----- username + password (Cloudflare Worker) ----- */
+  async function wSignIn(u, pw) {
+    const s = await wpost("/salt", { u });
+    const hash = await hashPw(pw, s.j.salt || "AAAAAAAAAAAAAAAAAAAAAA==");
+    const r = await wpost("/login", { u, hash });
+    if (r.status === 429) { const e = new Error("locked"); e.wait = waitText(r.j); throw e; }
+    if (r.status !== 200 || !r.j.ok) throw new Error("bad");
+    CRED = { u, hash }; lastActive = Date.now(); return r.j.user;
+  }
+  function enterApp(user) { $("login-note").hidden = true; if (user.mustChange) { $("login").hidden = true; openPw(true, showApp); } else showApp(); }
+  const signInErr = (err) => err.message === "locked" ? "Too many attempts. Try again in " + err.wait + "." : err.message === "bad" ? "Username or password is incorrect." : "Can't reach the server. Check your connection.";
+  $("pw-form").addEventListener("submit", async (e) => {
+    e.preventDefault(); const btn = $("pw-btn"); $("pw-err").textContent = "";
+    btn.disabled = true; btn.textContent = "Signing in…";
+    try { const user = await wSignIn($("u").value.trim(), $("p").value); $("p").value = ""; enterApp(user); }
+    catch (err) { $("pw-err").textContent = signInErr(err); }
+    btn.disabled = false; btn.textContent = "Sign in";
+  });
+  $("to-recover").addEventListener("click", () => loginMode("recover-form"));
+  $("to-signin").addEventListener("click", () => loginMode("pw-form"));
+  $("setup-form").addEventListener("submit", async (e) => {
+    e.preventDefault(); const err = $("setup-err"), btn = $("setup-btn"); err.textContent = "";
+    const username = $("s-user").value.trim().toLowerCase(), pw = $("s-pw").value;
+    if (!/^[a-z0-9._-]{3,30}$/.test(username)) { err.textContent = "Username: 3 to 30 letters, numbers, dots, dashes or underscores."; return; }
+    const prob = pwProblem(pw, $("s-pw2").value, username); if (prob) { err.textContent = prob; return; }
+    btn.disabled = true; btn.textContent = "Creating…";
+    try {
+      const r = await wpost("/setup", { code: $("s-code").value.trim(), name: $("s-name").value.trim(), username, email: $("s-email").value.trim(), pw: await newPw(pw) });
+      if (r.j.ok) {
+        ["s-code", "s-pw", "s-pw2"].forEach((id) => { $(id).value = ""; });
+        S.empty = false;
+        afterSecret = async () => { try { enterApp(await wSignIn(username, pw)); } catch (x) { loginMode("pw-form"); } };
+        showSecret({ title: "Save your recovery code", lead: "If you ever forget your password, <b>this code is the only way back in</b>. Write it down and keep it somewhere safe. It is shown only once.", value: r.j.recovery });
+      } else if (r.status === 403) err.textContent = "That setup code isn't right.";
+      else if (r.status === 409) { S.empty = false; loginMode("pw-form"); }
+      else err.textContent = "Couldn't create the account. Check the details and try again.";
+    } catch (x) { err.textContent = "Can't reach the server. Check your connection."; }
+    btn.disabled = false; btn.textContent = "Create owner account";
+  });
+  $("recover-form").addEventListener("submit", async (e) => {
+    e.preventDefault(); const err = $("recover-err"), btn = $("recover-btn"); err.textContent = "";
+    const username = $("r-user").value.trim(), pw = $("r-pw").value;
+    const prob = pwProblem(pw, $("r-pw2").value, username); if (prob) { err.textContent = prob; return; }
+    btn.disabled = true; btn.textContent = "Resetting…";
+    try {
+      const r = await wpost("/recover", { u: username, rec: $("r-code").value.trim(), pw: await newPw(pw) });
+      if (r.j.ok) {
+        ["r-code", "r-pw", "r-pw2"].forEach((id) => { $(id).value = ""; });
+        afterSecret = async () => { try { enterApp(await wSignIn(username, pw)); } catch (x) { loginMode("pw-form"); } };
+        showSecret({ title: "Password changed", lead: "Here is your <b>new recovery code</b>. The old one no longer works. Write it down and keep it somewhere safe. It is shown only once.", value: r.j.recovery });
+      } else if (r.status === 429) err.textContent = "Too many attempts. Try again in " + waitText(r.j) + ".";
+      else err.textContent = "That username or recovery code isn't right.";
+    } catch (x) { err.textContent = "Can't reach the server. Check your connection."; }
+    btn.disabled = false; btn.textContent = "Reset password";
+  });
+
+  /* ----- change password ----- */
+  function openPw(forced, cb) {
+    $("pw-box-form").reset(); $("pw-box-err").textContent = ""; afterPw = cb || null;
+    $("pw-x").hidden = !!forced; $("pw-signout").hidden = !forced; $("pwbox").dataset.forced = forced ? "1" : "";
+    $("pw-lead").textContent = forced ? "Choose your own password to continue. Use at least 10 characters. A few random words with a number works well." : "Use at least 10 characters. A few random words with a number works well.";
+    $("pwbox").hidden = false; setTimeout(() => $("pw-cur").focus(), 50);
+  }
+  $("chpw").addEventListener("click", () => openPw(false));
+  $("pw-signout").addEventListener("click", () => signOut());
+  $("pwbox").addEventListener("click", (e) => { if (e.target.closest("[data-closepw]") && !$("pwbox").dataset.forced) $("pwbox").hidden = true; });
+  $("pw-box-form").addEventListener("submit", async (e) => {
+    e.preventDefault(); const err = $("pw-box-err"), btn = $("pw-box-btn"); err.textContent = "";
+    const cur = $("pw-cur").value, np = $("pw-new").value;
+    const prob = pwProblem(np, $("pw-new2").value, CRED && CRED.u); if (prob) { err.textContent = prob; return; }
+    if (np === cur) { err.textContent = "Choose a password you haven't used."; return; }
+    btn.disabled = true; btn.textContent = "Saving…";
+    try {
+      const s = await wpost("/salt", { u: CRED.u }), curHash = await hashPw(cur, s.j.salt), pw = await newPw(np);
+      const r = await wpost("/pwset", { u: CRED.u, hash: CRED.hash, cur: curHash, pw });
+      if (r.j.ok) { CRED.hash = pw.hash; $("pwbox").hidden = true; $("pwbox").dataset.forced = ""; toast("Password changed"); const cb = afterPw; afterPw = null; if (cb) cb(); }
+      else if (r.status === 401) { signOut("Your sign-in is no longer valid. Please sign in again."); }
+      else err.textContent = "Your current password isn't right.";
+    } catch (x) { err.textContent = "Can't reach the server. Check your connection."; }
+    btn.disabled = false; btn.textContent = "Save new password";
   });
   $("signout").addEventListener("click", () => { if (confirm("Sign out of the admin app on this phone?")) signOut(); });
   $("refresh").addEventListener("click", async () => { if (await load(true)) toast("Up to date"); });
@@ -87,7 +232,7 @@
   /* ---------- roles ---------- */
   const can = { hours: () => S.me && S.me.role !== "Staff", settings: () => S.me && S.me.role !== "Staff", team: () => S.me && S.me.role === "Owner", bookings: () => true };
   function applyRole() {
-    $("who").textContent = S.me ? (S.me.role === "Owner" ? "Owner" : S.me.name + " · " + S.me.role) : "";
+    $("who").textContent = S.me ? (S.me.role === "Owner" && !W ? "Owner" : S.me.name + " · " + S.me.role) : "";
     $("tab-hours-btn").hidden = !can.hours(); $("tab-settings-btn").hidden = !can.settings(); $("tab-team-btn").hidden = !can.team();
     const cur = document.querySelector("#tabs button.on");
     if (cur && cur.hidden) selectTab("bookings");
@@ -95,47 +240,82 @@
 
   /* ---------- team (owner only) ---------- */
   async function loadTeam() {
-    try { const j = await api("admin_staff_list"); if (j && j.ok) { S.staff = j.staff; renderTeam(); } } catch (e) { /* shown elsewhere */ }
+    try {
+      if (W) { const j = await wteam("list"); if (j && j.ok) { S.staff = j.users.map((x) => Object.assign({ row: x.id, added: x.created }, x)); renderTeam(); } return; }
+      const j = await api("admin_staff_list"); if (j && j.ok) { S.staff = j.staff; renderTeam(); }
+    } catch (e) { /* shown elsewhere */ }
   }
   function renderTeam() {
     $("team-list").innerHTML = S.staff.length ? S.staff.map((m) =>
-      '<div class="member" data-row="' + m.row + '"><div class="member-top"><div><div class="member-name">' + esc(m.name) + "</div><small>Added " + esc(m.added || "") + "</small></div>" +
+      '<div class="member" data-row="' + m.row + '"><div class="member-top"><div><div class="member-name">' + esc(m.name) + "</div><small>" + (W ? "@" + esc(m.username) + " · " + (m.lastLogin ? "Last sign-in " + esc(m.lastLogin.slice(0, 10)) : "Never signed in") + (m.mustChange ? " · must choose a password" : "") : "Added " + esc(m.added || "")) + "</small></div>" +
       '<span class="pill ' + (m.active ? esc(m.role) : "Locked") + '">' + (m.active ? esc(m.role) : "Locked out") + "</span></div>" +
-      '<div class="acts"><button type="button" class="btn sm" data-m="role">Make ' + (m.role === "Staff" ? "Manager" : "Staff") + '</button>' +
-      '<button type="button" class="btn sm" data-m="reset">New key</button>' +
+      (m.role === "Owner" ? "" : '<div class="acts"><button type="button" class="btn sm" data-m="role">Make ' + (m.role === "Staff" ? "Manager" : "Staff") + '</button>' +
+      '<button type="button" class="btn sm" data-m="reset">' + (W ? "Reset password" : "New key") + '</button>' +
       '<button type="button" class="btn sm" data-m="active">' + (m.active ? "Lock out" : "Unlock") + '</button>' +
-      '<button type="button" class="btn sm bad" data-m="remove">Remove</button></div></div>').join("")
+      '<button type="button" class="btn sm bad" data-m="remove">Remove</button></div>') + "</div>").join("")
       : '<div class="empty">No team members yet. Add your first one below.</div>';
   }
   let lastKey = null;
-  function showKey(name, k) {
-    lastKey = { name, key: k }; $("key-title").textContent = "Sign-in key created"; $("key-name").textContent = name; $("key-val").textContent = k; $("keybox").hidden = false;
+  function showSecret(o) {
+    lastKey = o; $("key-title").textContent = o.title; $("key-lead").innerHTML = o.lead; $("key-val").textContent = o.value;
+    $("copy-invite").hidden = !o.invite; $("keybox").hidden = false;
   }
+  const showKey = (name, k) => showSecret({ title: "Sign-in key created", value: k,
+    lead: "Send this key to <b>" + esc(name) + "</b> privately. <b>It is shown only once.</b> If it gets lost, just make a new key.",
+    invite: "Hi " + name.split(" ")[0] + ", here is your sign-in for the " + (C.businessName || "studio") + " booking app.\nOpen: " + location.origin + location.pathname + "\nYour key: " + k + "\nKeep it private, and don't share it." });
   async function copy(text, ok) {
     try { await navigator.clipboard.writeText(text); toast(ok); }
-    catch (e) { const ta = document.createElement("textarea"); ta.value = text; document.body.appendChild(ta); ta.select(); try { document.execCommand("copy"); toast(ok); } catch (x) { toast("Couldn't copy. Select the key and copy it.", true); } ta.remove(); }
+    catch (e) { const ta = document.createElement("textarea"); ta.value = text; document.body.appendChild(ta); ta.select(); try { document.execCommand("copy"); toast(ok); } catch (x) { toast("Couldn't copy. Select the text and copy it.", true); } ta.remove(); }
   }
-  $("copy-key").addEventListener("click", () => lastKey && copy(lastKey.key, "Key copied"));
-  $("copy-invite").addEventListener("click", () => lastKey && copy("Hi " + lastKey.name.split(" ")[0] + ", here is your sign-in for the " + (C.businessName || "studio") + " booking app.\nOpen: " + location.origin + location.pathname + "\nYour key: " + lastKey.key + "\nKeep it private, and don't share it.", "Message copied"));
-  $("keybox").addEventListener("click", (e) => { if (e.target.closest("[data-closekey]")) { $("keybox").hidden = true; lastKey = null; $("key-val").textContent = ""; } });
+  $("copy-key").addEventListener("click", () => lastKey && copy(lastKey.value, "Copied"));
+  $("copy-invite").addEventListener("click", () => lastKey && lastKey.invite && copy(lastKey.invite, "Message copied"));
+  $("keybox").addEventListener("click", (e) => {
+    if (!e.target.closest("[data-closekey]")) return;
+    $("keybox").hidden = true; lastKey = null; $("key-val").textContent = "";
+    const cb = afterSecret; afterSecret = null; if (cb) cb();
+  });
   $("team-form").addEventListener("submit", async (e) => {
     e.preventDefault(); const name = $("t-name").value.trim(); $("team-err").textContent = ""; if (!name) return;
     const btn = $("team-add"); btn.disabled = true;
-    try { const j = await api("admin_staff_add", { name, role: $("t-role").value });
-      if (j.ok) { $("team-form").reset(); showKey(j.name, j.key); loadTeam(); } else $("team-err").textContent = "Couldn't add that person. Try again.";
+    try {
+      if (W) {
+        const username = $("t-user").value.trim().toLowerCase(), temp = $("t-pw").value || genPw();
+        if (!/^[a-z0-9._-]{3,30}$/.test(username)) { $("team-err").textContent = "Username: 3 to 30 letters, numbers, dots, dashes or underscores."; btn.disabled = false; return; }
+        if (temp.length < 10) { $("team-err").textContent = "The temporary password needs at least 10 characters."; btn.disabled = false; return; }
+        const j = await wteam("add", { username, name, email: $("t-email").value.trim(), role: $("t-role").value, pw: await newPw(temp) });
+        if (j.ok) {
+          $("team-form").reset(); loadTeam();
+          showSecret({ title: "Account created", value: "Username: " + username + "\nTemporary password: " + temp,
+            lead: "Send these sign-in details to <b>" + esc(name) + "</b> privately. They'll choose their own password the first time they sign in. <b>This is shown only once.</b>",
+            invite: "Hi " + name.split(" ")[0] + ", here is your sign-in for the " + (C.businessName || "studio") + " booking app.\nOpen: " + location.origin + location.pathname + "\nUsername: " + username + "\nTemporary password: " + temp + "\nYou'll choose your own password when you first sign in." });
+        } else if (j.error === "exists") $("team-err").textContent = "That username or email is already used.";
+        else if (j.error !== "forbidden" && j.error !== "locked") $("team-err").textContent = "Couldn't add that person. Check the details and try again.";
+      } else {
+        const j = await api("admin_staff_add", { name, role: $("t-role").value });
+        if (j.ok) { $("team-form").reset(); showKey(j.name, j.key); loadTeam(); } else $("team-err").textContent = "Couldn't add that person. Try again.";
+      }
     } catch (err) { fail(err); }
     btn.disabled = false;
   });
   $("team-list").addEventListener("click", async (e) => {
     const b = e.target.closest("[data-m]"); if (!b) return;
-    const row = +b.closest(".member").dataset.row, m = S.staff.find((x) => x.row === row), act = b.dataset.m;
+    const row = b.closest(".member").dataset.row, m = S.staff.find((x) => String(x.row) === row), act = b.dataset.m;
     let call;
-    if (act === "role") call = () => api("admin_staff_update", { row, role: m.role === "Staff" ? "Manager" : "Staff" });
-    else if (act === "active") { if (m.active && !confirm("Lock " + m.name + " out? They'll be signed out straight away.")) return; call = () => api("admin_staff_update", { row, active: !m.active }); }
-    else if (act === "remove") { if (!confirm("Remove " + m.name + "? Their key stops working. Bookings they handled keep their name.")) return; call = () => api("admin_staff_remove", { row }); }
-    else if (act === "reset") { if (!confirm("Make a new key for " + m.name + "? The old key stops working.")) return; call = async () => { const j = await api("admin_staff_reset", { row }); if (j.ok) showKey(j.name, j.key); return j; }; }
+    if (act === "role") call = () => (W ? wteam("update", { id: m.id, role: m.role === "Staff" ? "Manager" : "Staff" }) : api("admin_staff_update", { row: +row, role: m.role === "Staff" ? "Manager" : "Staff" }));
+    else if (act === "active") { if (m.active && !confirm("Lock " + m.name + " out? They'll be signed out straight away.")) return; call = () => (W ? wteam("update", { id: m.id, active: !m.active }) : api("admin_staff_update", { row: +row, active: !m.active })); }
+    else if (act === "remove") { if (!confirm("Remove " + m.name + "? Their sign-in stops working. Bookings they handled keep their name.")) return; call = () => (W ? wteam("remove", { id: m.id }) : api("admin_staff_remove", { row: +row })); }
+    else if (act === "reset") {
+      if (!confirm(W ? "Reset " + m.name + "'s password? Their current password stops working." : "Make a new key for " + m.name + "? The old key stops working.")) return;
+      call = async () => {
+        if (W) { const temp = genPw(), j = await wteam("setpw", { id: m.id, pw: await newPw(temp) });
+          if (j.ok) showSecret({ title: "Password reset", value: "Username: " + m.username + "\nTemporary password: " + temp, lead: "Send these details to <b>" + esc(m.name) + "</b> privately. They'll choose a new password when they sign in. <b>Shown only once.</b>",
+            invite: "Hi " + m.name.split(" ")[0] + ", your password was reset.\nOpen: " + location.origin + location.pathname + "\nUsername: " + m.username + "\nTemporary password: " + temp + "\nYou'll choose a new password when you sign in." });
+          return j; }
+        const j = await api("admin_staff_reset", { row: +row }); if (j.ok) showKey(j.name, j.key); return j;
+      };
+    }
     b.disabled = true;
-    try { const j = await call(); if (!j.ok && j.error !== "forbidden") toast("Couldn't do that. Try again.", true); } catch (err) { fail(err); }
+    try { const j = await call(); if (!j.ok && j.error !== "forbidden" && j.error !== "locked") toast("Couldn't do that. Try again.", true); } catch (err) { fail(err); }
     loadTeam();
   });
 
@@ -337,8 +517,12 @@
   }
   function renderAll() { renderBookings(); renderWeek(); renderOff(); renderSettings(); }
   if ("serviceWorker" in navigator && location.protocol.indexOf("http") === 0) navigator.serviceWorker.register("sw.js").catch(() => {});
-  document.addEventListener("visibilitychange", () => { if (!document.hidden && key && S.loaded) load(true); });
+  document.addEventListener("visibilitychange", () => { if (!document.hidden && signedIn() && S.loaded) load(true); });
   // Keep a desktop tab fresh while it is open and visible
-  setInterval(() => { if (!document.hidden && key && S.loaded && $("sheet").hidden) load(true); }, 60000);
-  if (key) showApp(); else showLogin();
+  setInterval(() => { if (!document.hidden && signedIn() && S.loaded && $("sheet").hidden) load(true); }, 60000);
+  if (W) {
+    document.querySelectorAll(".w-only").forEach((el) => { el.hidden = false; });
+    $("team-add").textContent = "Create account";
+    wpost("/ping", {}).then((r) => { S.empty = !!r.j.empty; showLogin(); }).catch(() => showLogin());
+  } else if (key) showApp(); else showLogin();
 })();

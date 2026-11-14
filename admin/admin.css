@@ -165,3 +165,10 @@ a.btn { display: inline-flex; align-items: center; justify-content: center; text
 .pill.Locked { background: var(--bad-bg); color: var(--bad); }
 .member .acts { margin-top: 12px; }
 .keyshow { margin: 14px 0; padding: 16px; border-radius: 14px; background: var(--card); border: 2px dashed var(--accent); font: 700 20px/1.3 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: .04em; text-align: center; overflow-wrap: anywhere; user-select: all; }
+
+/* worker sign-in */
+.login form { margin: 14px 0 6px; }
+.login .link-btn { display: block; margin: 8px auto 0; }
+.notice { background: var(--warn-bg); color: var(--warn); border-radius: 12px; padding: 10px 14px; font-weight: 600; font-size: 14px; }
+.keyshow { white-space: pre-line; }
+.w-only[hidden] { display: none; }

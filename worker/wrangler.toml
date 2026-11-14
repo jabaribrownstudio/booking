@@ -1,0 +1,16 @@
+# Only needed if you deploy with the command line (wrangler). The dashboard route in README.md needs no file.
+name = "booking-auth"
+main = "worker.js"
+compatibility_date = "2025-01-01"
+
+[[kv_namespaces]]
+binding = "USERS"
+id = "PASTE_YOUR_KV_NAMESPACE_ID_HERE"
+
+[vars]
+APPS_SCRIPT_URL = "PASTE_YOUR_APPS_SCRIPT_WEB_APP_URL_HERE"
+ALLOWED_ORIGIN = "https://jabaribrownstudio.github.io"
+
+# Secrets are NOT stored in this file. Set them with:
+#   npx wrangler secret put APPS_SCRIPT_KEY
+#   npx wrangler secret put SETUP_CODE

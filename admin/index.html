@@ -19,14 +19,55 @@
 <section id="login" class="login" hidden>
   <img class="login-logo" src="../images/logo.png" alt="Jabari Brown Studio">
   <h1>Studio admin</h1>
-  <p class="muted">Enter your admin key to manage bookings and your availability.</p>
+  <p class="muted" id="login-lead">Enter your admin key to manage bookings and your availability.</p>
+  <p class="notice" id="login-note" role="status" hidden></p>
   <form id="login-form" autocomplete="off">
     <label for="key">Admin key</label>
     <input id="key" type="password" autocomplete="current-password" autocapitalize="none" spellcheck="false" required>
     <p id="login-err" class="err" role="alert"></p>
     <button class="btn primary block" type="submit" id="login-btn">Sign in</button>
   </form>
-  <p class="muted small">This is the secret you set as <code>ADMIN_KEY</code> in your Apps Script. It is saved only on this phone.</p>
+  <form id="pw-form" hidden>
+    <label for="u">Username or email</label>
+    <input id="u" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" required>
+    <label for="p">Password</label>
+    <input id="p" type="password" autocomplete="current-password" required>
+    <p id="pw-err" class="err" role="alert"></p>
+    <button class="btn primary block" type="submit" id="pw-btn">Sign in</button>
+    <button type="button" class="link-btn" id="to-recover">Forgot your password?</button>
+  </form>
+
+  <form id="setup-form" hidden>
+    <label for="s-code">Setup code</label>
+    <input id="s-code" type="password" autocomplete="off" autocapitalize="none" spellcheck="false" required>
+    <label for="s-name">Your name</label>
+    <input id="s-name" type="text" autocomplete="name" required>
+    <label for="s-user">Username</label>
+    <input id="s-user" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="letters, numbers, . _ -" required>
+    <label for="s-email">Email <span class="muted">(optional)</span></label>
+    <input id="s-email" type="email" autocomplete="email" autocapitalize="none">
+    <label for="s-pw">Password</label>
+    <input id="s-pw" type="password" autocomplete="new-password" required>
+    <label for="s-pw2">Repeat password</label>
+    <input id="s-pw2" type="password" autocomplete="new-password" required>
+    <p id="setup-err" class="err" role="alert"></p>
+    <button class="btn primary block" type="submit" id="setup-btn">Create owner account</button>
+  </form>
+
+  <form id="recover-form" hidden>
+    <label for="r-user">Username</label>
+    <input id="r-user" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" required>
+    <label for="r-code">Recovery code</label>
+    <input id="r-code" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABCD-EFGH-JKMN" required>
+    <label for="r-pw">New password</label>
+    <input id="r-pw" type="password" autocomplete="new-password" required>
+    <label for="r-pw2">Repeat new password</label>
+    <input id="r-pw2" type="password" autocomplete="new-password" required>
+    <p id="recover-err" class="err" role="alert"></p>
+    <button class="btn primary block" type="submit" id="recover-btn">Reset password</button>
+    <button type="button" class="link-btn" id="to-signin">Back to sign in</button>
+  </form>
+  <p class="muted small" id="login-foot">This is the secret you set as <code>ADMIN_KEY</code> in your Apps Script. It is saved only on this phone.</p>
 </section>
 
 <div id="app" hidden>
@@ -34,6 +75,7 @@
     <img class="logo" src="../images/logo.png" alt="Jabari Brown Studio">
     <div class="top-actions">
       <span class="who" id="who"></span>
+      <button class="icon-btn" id="chpw" type="button" aria-label="Change password" hidden><svg viewBox="0 0 24 24"><circle cx="8" cy="15" r="3.5"/><path d="M10.5 12.5L19 4M16 7l2.5 2.5M13.5 9.5L16 12"/></svg></button>
       <button class="icon-btn" id="refresh" type="button" aria-label="Refresh"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v5h-5"/></svg></button>
       <button class="icon-btn" id="signout" type="button" aria-label="Sign out"><svg viewBox="0 0 24 24"><path d="M9 4H5v16h4M16 8l4 4-4 4M20 12H9"/></svg></button>
     </div>
@@ -93,6 +135,11 @@
       <h2>Add someone</h2>
       <form id="team-form" class="card">
         <label>Name<input type="text" id="t-name" maxlength="60" autocomplete="off" required></label>
+        <div class="w-only" hidden>
+          <label>Username<input type="text" id="t-user" maxlength="30" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="letters, numbers, . _ -"></label>
+          <label>Email <span class="muted">(optional)</span><input type="email" id="t-email" autocomplete="off" autocapitalize="none"></label>
+          <label>Temporary password <span class="muted">(they choose their own at first sign-in)</span><input type="text" id="t-pw" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="Leave empty to generate one"></label>
+        </div>
         <label>Role<select id="t-role"><option value="Staff">Staff</option><option value="Manager">Manager</option></select></label>
         <p class="err" id="team-err" role="alert"></p>
         <button class="btn primary block" type="submit" id="team-add">Create sign-in key</button>
@@ -138,11 +185,25 @@
   <div class="sheet-bg" data-closekey></div>
   <div class="sheet-card">
     <div class="sheet-head"><h2 id="key-title">Sign-in key</h2><button type="button" class="icon-btn" data-closekey aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
-    <p class="muted">Send this key to <b id="key-name"></b> privately. <b>It is shown only once.</b> If it gets lost, just make a new key.</p>
+    <p class="muted" id="key-lead"></p>
     <div class="keyshow" id="key-val"></div>
-    <div class="acts"><button type="button" class="btn primary" id="copy-key">Copy key</button><button type="button" class="btn" id="copy-invite">Copy invitation message</button></div>
+    <div class="acts"><button type="button" class="btn primary" id="copy-key">Copy</button><button type="button" class="btn" id="copy-invite">Copy invitation message</button></div>
     <button type="button" class="btn block" style="margin-top:14px" data-closekey>Done</button>
   </div>
+</div>
+
+<div id="pwbox" class="sheet" hidden>
+  <div class="sheet-bg" data-closepw></div>
+  <form class="sheet-card" id="pw-box-form">
+    <div class="sheet-head"><h2>Change password</h2><button type="button" class="icon-btn" data-closepw id="pw-x" aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+    <p class="muted" id="pw-lead">Use at least 10 characters. A few random words with a number works well.</p>
+    <label>Current password<input type="password" id="pw-cur" autocomplete="current-password" required></label>
+    <label>New password<input type="password" id="pw-new" autocomplete="new-password" required></label>
+    <label>Repeat new password<input type="password" id="pw-new2" autocomplete="new-password" required></label>
+    <p class="err" id="pw-box-err" role="alert"></p>
+    <button class="btn primary block" type="submit" id="pw-box-btn">Save new password</button>
+    <button type="button" class="link-btn" id="pw-signout" hidden>Sign out instead</button>
+  </form>
 </div>
 
 <div id="toast" class="toast" role="status" aria-live="polite"></div>

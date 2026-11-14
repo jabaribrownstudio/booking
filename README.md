@@ -7,6 +7,7 @@ Bookings are saved to a **Google Sheet** (free) and you get an email for each on
 index.html          the app
 css/styles.css      look and feel
 admin/              phone admin app (installable)
+worker/             Cloudflare Worker for username + password sign-in (optional)
 images/logo.png     your studio logo
 js/config.js        YOUR SETTINGS (name, packages, Instagram, backend URL)
 js/app.js           app logic
@@ -70,6 +71,8 @@ You can change someone's role, make them a new key (the old one stops working), 
 **Long-press shortcuts:** once installed, long-press the app icon on your Android home screen for quick links to Upcoming, Pending, Add booking and Availability.
 
 **Home-screen widget:** a web app can't draw a real Android widget, but every booking is also added to your Google Calendar. Long-press your home screen, choose Widgets, pick the **Google Calendar** widget (the Schedule or Agenda list) and it shows your upcoming appointments, updating by itself. Cancelled bookings disappear from it. Bookings are titled like `[Confirmed] Silver – Maya Henry`, so you can see what is still `[Pending]`. If you set `CALENDAR_ID` to a separate calendar, make sure that calendar is ticked in the Google Calendar app.
+
+**Username and password sign-in with Cloudflare (optional):** instead of typed keys, you can have real accounts (username + password, forced password change on first sign-in, recovery code, lock-out after wrong tries, 30-minute idle sign-out), run by a small Cloudflare Worker that also keeps your Apps Script secret out of the browser. Step-by-step instructions are in `worker/README.md`. When it is switched on (`authWorker` in `js/config.js`), the Team tab manages these accounts.
 
 Keep the key private. It is saved only on your phone, and **Sign out** (top right) removes it. To change it, edit `ADMIN_KEY`, redeploy, and sign in again. The admin page is not linked from your booking page, and anyone without the key sees only the sign-in screen.
 

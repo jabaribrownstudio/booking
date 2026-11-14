@@ -495,6 +495,11 @@ function authenticate_(key) {
 
 function adminApi_(d) {
   var me = authenticate_(d.key);
+  // Behind the Cloudflare Worker: the Worker proves itself with the owner key and says who is acting
+  // (the Worker has already checked that person's username and password).
+  if (me && me.role === "Owner" && d.as && d.as.name && ["Owner", "Manager", "Staff"].indexOf(d.as.role) > -1) {
+    me = { name: clean_(d.as.name, 60), role: d.as.role };
+  }
   if (!me) {
     Utilities.sleep(1500); // slows down anyone guessing a key
     return { ok: false, error: "unauthorized" };
