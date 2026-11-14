@@ -17,7 +17,7 @@ window.BOOKING_CONFIG = {
 
   // Where bookings go. Paste your Google Apps Script web-app URL here (see README).
   // While empty, the app runs in "no backend" mode: it opens an email / Instagram DM with the details instead.
-  endpoint: "",
+  endpoint: "https://script.google.com/macros/s/AKfycbzo4dqwhycjgYWCMlBHgU4Dkc_UmEBYuUCWGRY8lm_Vw_fjRadBpFkx8RbcL7klE618/exec",
   ownerEmail: "you@example.com",  // used by the no-backend fallback
 
   currency: "J$",
