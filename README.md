@@ -171,5 +171,5 @@ The source is in `android/`. Every change to it is built by GitHub Actions and p
 **https://github.com/jabaribrownstudio/booking/releases/tag/android-latest** (file `studio-admin.apk`).
 
 Install: open that page on your phone, download `studio-admin.apk`, tap it, and allow "Install unknown apps" for your browser if asked. New builds install over the old one.
-Sign in with your username and password (or the admin key under "Admin key"). Then press and hold the home screen, tap Widgets, and add **Studio Admin → Upcoming**.
+Sign in with your username and password (or the admin key under "Admin key"). Then press and hold the home screen, tap Widgets, and add **JB Studio Admin → Upcoming**.
 Team accounts, owner setup and recovery stay in the web admin app. The build uses a fixed debug signing key stored in the repo, so keep the repo private if you care about who can sign builds.

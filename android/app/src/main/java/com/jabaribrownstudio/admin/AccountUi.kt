@@ -43,7 +43,7 @@ fun AccountTab(vm: MainViewModel, pad: PaddingValues) {
         Card2 {
             Text("Home-screen widget", style = MaterialTheme.typography.titleMedium)
             Text(
-                "Press and hold an empty spot on your home screen, tap Widgets, find Studio Admin and drag “Upcoming” onto the screen. Resize it to show more appointments. It refreshes about every 30 minutes and whenever you open the app.",
+                "Press and hold an empty spot on your home screen, tap Widgets, find JB Studio Admin and drag “Upcoming” onto the screen. Resize it to show more appointments. It refreshes about every 30 minutes and whenever you open the app.",
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }

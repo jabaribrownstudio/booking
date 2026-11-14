@@ -87,7 +87,7 @@ private fun WidgetContent(signedIn: Boolean, items: List<Store.Item>) {
             }
         }
         if (!signedIn) {
-            Message("Open Studio Admin and sign in to see your appointments here.")
+            Message("Open JB Studio Admin and sign in to see your appointments here.")
         } else if (items.isEmpty()) {
             Message("No upcoming appointments.")
         } else {

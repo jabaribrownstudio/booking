@@ -57,7 +57,7 @@ fun SignInScreen(vm: MainViewModel) {
             colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.onBackground)
         )
         Spacer(Modifier.height(20.dp))
-        Text("Studio Admin", style = MaterialTheme.typography.headlineMedium)
+        Text("JB Studio Admin", style = MaterialTheme.typography.headlineMedium)
         Text(
             "Sign in to manage bookings and your availability.",
             style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
