@@ -164,3 +164,12 @@ If your WordPress theme blocks iframes, use the "Custom HTML" block (not the cla
 - **Payments/deposits:** not included. Easiest add-on: put a PayPal.me or Stripe Payment Link in the confirmation email in `Code.gs`.
 - The Apps Script web app URL is public by design (anyone can send a booking). The `booked` endpoint only exposes dates and times, never client details.
 - Gmail's free sending quota is about 100 emails/day via Apps Script, which is plenty for bookings.
+
+## Android app (native) and home-screen widget
+
+The source is in `android/`. Every change to it is built by GitHub Actions and published as a download:
+**https://github.com/jabaribrownstudio/booking/releases/tag/android-latest** (file `studio-admin.apk`).
+
+Install: open that page on your phone, download `studio-admin.apk`, tap it, and allow "Install unknown apps" for your browser if asked. New builds install over the old one.
+Sign in with your username and password (or the admin key under "Admin key"). Then press and hold the home screen, tap Widgets, and add **Studio Admin → Upcoming**.
+Team accounts, owner setup and recovery stay in the web admin app. The build uses a fixed debug signing key stored in the repo, so keep the repo private if you care about who can sign builds.
