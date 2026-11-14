@@ -16,6 +16,11 @@ var CONFIG = {
   SHEET_NAME: "Bookings",
   SEND_CLIENT_EMAIL: true,
 
+  // ---- Admin app (your phone) ----
+  // A long secret only you know (20+ letters/numbers). You type it into the admin app once.
+  // Leave as is to switch the admin app off.
+  ADMIN_KEY: "change-this-to-a-long-secret",
+
   // ---- Google Calendar ----
   CALENDAR_ID: "primary",           // "primary" = your main calendar, or paste a calendar ID. "" turns calendar off
   POPUP_REMINDERS: [1440, 60],      // minutes before the session: 1 day and 1 hour
@@ -262,7 +267,7 @@ function getBlocked_() {
 function getSettings_() {
   var s = {}, k;
   for (k in CONFIG.DEFAULT_SETTINGS) s[k] = CONFIG.DEFAULT_SETTINGS[k];
-  var bounds = { slotInterval: [5, 240], bufferMinutes: [0, 480], minNoticeHours: [0, 720], maxDaysAhead: [1, 365] };
+  var bounds = BOUNDS;
   rows_(TAB.SETTINGS, 2).forEach(function (r) {
     var label = String(r.d[0]).toLowerCase();
     var key = label.indexOf("interval") > -1 ? "slotInterval" : label.indexOf("buffer") > -1 ? "bufferMinutes" :
@@ -289,58 +294,83 @@ function doPost(e) {
   try {
     lock.waitLock(20000);
     var d = JSON.parse(e.postData.contents);
+    if (d.action && String(d.action).indexOf("admin_") === 0) return json_(adminApi_(d));
+    return json_(createBooking_(d, false));
+  } catch (err) {
+    console.error(err);
+    return json_({ ok: false, error: "server_error" });
+  } finally {
+    try { lock.releaseLock(); } catch (x) { /* ignore */ }
+  }
+}
 
-    var name = clean_(d.firstName && d.lastName ? d.firstName + " " + d.lastName : d.name, 100), email = clean_(d.email, 150), phone = clean_(d.phone, 40);
-    if (!name || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) || !phone) return json_({ ok: false, error: "invalid_input" });
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(d.date) || !/^\d{2}:\d{2}$/.test(d.time)) return json_({ ok: false, error: "invalid_input" });
-    var duration = Math.max(15, Math.min(720, parseInt(d.duration, 10) || 60));
+/**
+ * Saves a booking. Used for clients (admin = false) and for the admin app (admin = true).
+ * Admin bookings can be Confirmed straight away, may skip email/phone, and may fall outside
+ * your opening hours (you decide), but they still can't overlap another booking unless d.force is true.
+ */
+function createBooking_(d, admin) {
+  var name = clean_(d.firstName && d.lastName ? d.firstName + " " + d.lastName : d.name, 100);
+  var email = clean_(d.email, 150), phone = clean_(d.phone, 40);
+  var emailOk = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email);
+  if (!name || (!admin && (!emailOk || !phone))) return { ok: false, error: "invalid_input" };
+  if (admin && email && !emailOk) return { ok: false, error: "invalid_input" };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d.date) || !/^\d{2}:\d{2}$/.test(d.time)) return { ok: false, error: "invalid_input" };
+  var duration = Math.max(5, Math.min(720, parseInt(d.duration, 10) || 60));
 
-    var start = toMin_(d.time), end = start + duration;
-    var buf = getSettings_().bufferMinutes;
+  var start = toMin_(d.time), end = start + duration;
+  var buf = getSettings_().bufferMinutes;
+  var dp = d.date.split("-");
 
+  if (!admin) {
     // The time must be inside your opening hours and not blocked off in "Time off".
-    var dp = d.date.split("-");
     var dow = new Date(+dp[0], +dp[1] - 1, +dp[2]).getDay();
     var inHours = (getHours_()[dow] || []).some(function (w) { return start >= toMin_(w[0]) && end <= toMin_(w[1]); });
     var blocked = getBlocked_().some(function (b) {
       return b.date === d.date && (!b.start || (start < toMin_(b.end) && end > toMin_(b.start)));
     });
-    if (!inHours || blocked) return json_({ ok: false, error: "slot_unavailable" });
+    if (!inHours || blocked) return { ok: false, error: "slot_unavailable" };
+  }
 
-    // And it must not overlap another booking (plus the buffer).
+  // It must not overlap another booking (plus the buffer).
+  if (!(admin && d.force)) {
     var clash = busySlots_().some(function (b) {
       return b.date === d.date && start < toMin_(b.end) + buf && end + buf > toMin_(b.start);
     });
-    if (clash) return json_({ ok: false, error: "slot_taken" });
+    if (clash) return { ok: false, error: "slot_taken" };
+  }
 
-    var sh = getSheet_();
-    var row = [new Date(), "Pending", name, email, phone, clean_(d.instagram, 60), clean_(d.packageName, 80),
-               clean_(d.currency, 5) + clean_(d.price, 12), d.date, d.time, fromMin_(end), duration,
-               clean_(d.location, 200), clean_(d.notes, 1000), clean_(d.source, 40), ""];
-    sh.appendRow(row);
-    var r = sh.getLastRow();
-    [COL.DATE, COL.START, COL.END].forEach(function (c) { sh.getRange(r, c).setNumberFormat("@").setValue(row[c - 1]); });
+  var status = admin && ["Pending", "Confirmed", "Cancelled"].indexOf(d.status) > -1 ? d.status : "Pending";
+  var sh = getSheet_();
+  var row = [new Date(), status, name, email, phone, clean_(d.instagram, 60), clean_(d.packageName, 80),
+             clean_(d.currency, 5) + clean_(d.price, 12), d.date, d.time, fromMin_(end), duration,
+             clean_(d.location, 200), clean_(d.notes, 1000), admin ? "Admin app" : clean_(d.source, 40), ""];
+  sh.appendRow(row);
+  var r = sh.getLastRow();
+  [COL.DATE, COL.START, COL.END].forEach(function (c) { sh.getRange(r, c).setNumberFormat("@").setValue(row[c - 1]); });
 
-    // Google Calendar event with reminders
-    try {
-      var cal = getCalendar_();
-      if (cal) {
-        var s = new Date(+dp[0], +dp[1] - 1, +dp[2], Math.floor(start / 60), start % 60);
-        var en = new Date(s.getTime() + duration * 60000);
-        var ev = cal.createEvent("[Pending] " + row[6] + " – " + name, s, en, {
-          description: "Package: " + row[6] + " (" + row[7] + ")\nPhone: " + phone + "\nEmail: " + email +
-            "\nInstagram: " + row[5] + "\nNotes: " + row[13] + "\nSource: " + (row[14] || "website"),
-          location: row[12]
-        });
-        ev.removeAllReminders();
-        CONFIG.POPUP_REMINDERS.forEach(function (m) { ev.addPopupReminder(m); });
-        CONFIG.EMAIL_REMINDERS.forEach(function (m) { ev.addEmailReminder(m); });
-        sh.getRange(r, COL.EVENT).setValue(ev.getId());
-      }
-    } catch (err) { console.error("Calendar error: " + err); }
+  // Google Calendar event with reminders
+  try {
+    var cal = getCalendar_();
+    if (cal && status !== "Cancelled") {
+      var s = new Date(+dp[0], +dp[1] - 1, +dp[2], Math.floor(start / 60), start % 60);
+      var en = new Date(s.getTime() + duration * 60000);
+      var ev = cal.createEvent("[" + status + "] " + row[6] + " – " + name, s, en, {
+        description: "Package: " + row[6] + " (" + row[7] + ")\nPhone: " + phone + "\nEmail: " + email +
+          "\nInstagram: " + row[5] + "\nNotes: " + row[13] + "\nSource: " + (row[14] || "website"),
+        location: row[12]
+      });
+      ev.removeAllReminders();
+      CONFIG.POPUP_REMINDERS.forEach(function (m) { ev.addPopupReminder(m); });
+      CONFIG.EMAIL_REMINDERS.forEach(function (m) { ev.addEmailReminder(m); });
+      sh.getRange(r, COL.EVENT).setValue(ev.getId());
+    }
+  } catch (err) { console.error("Calendar error: " + err); }
 
-    var when = d.date + " at " + niceTime_(d.time) + " (" + duration + " min)";
-    try {
+  // Emails: clients get the full set. Bookings you add yourself only email the client if you ask for it.
+  var when = d.date + " at " + niceTime_(d.time) + " (" + duration + " min)";
+  try {
+    if (!admin) {
       MailApp.sendEmail({
         to: CONFIG.OWNER_EMAIL,
         replyTo: email,
@@ -348,27 +378,25 @@ function doPost(e) {
         body: "New booking request\n\nPackage: " + row[6] + " (" + row[7] + ")\nWhen: " + when +
           "\nName: " + name + "\nEmail: " + email + "\nPhone: " + phone +
           "\nInstagram: " + row[5] + "\nLocation: " + row[12] + "\nNotes: " + row[13] +
-          "\nSource: " + (row[14] || "website") + "\n\nOpen the sheet to confirm or cancel."
+          "\nSource: " + (row[14] || "website") + "\n\nOpen the sheet or the admin app to confirm or cancel."
       });
-      if (CONFIG.SEND_CLIENT_EMAIL) {
-        MailApp.sendEmail({
-          to: email,
-          replyTo: CONFIG.OWNER_EMAIL,
-          name: CONFIG.BUSINESS_NAME,
-          subject: "We got your booking request – " + CONFIG.BUSINESS_NAME,
-          body: "Hi " + name.split(" ")[0] + ",\n\nThanks for booking! Here's what we received:\n\n" +
-            row[6] + "\n" + when + "\n\nWe'll confirm your session shortly. Reply to this email if anything needs to change.\n\n– " + CONFIG.BUSINESS_NAME
-        });
-      }
-    } catch (mailErr) { console.error("Mail error: " + mailErr); }
+    }
+    if (emailOk && ((!admin && CONFIG.SEND_CLIENT_EMAIL) || (admin && d.notifyClient))) {
+      MailApp.sendEmail({
+        to: email,
+        replyTo: CONFIG.OWNER_EMAIL,
+        name: CONFIG.BUSINESS_NAME,
+        subject: (admin && status === "Confirmed" ? "Your session is booked – " : "We got your booking request – ") + CONFIG.BUSINESS_NAME,
+        body: "Hi " + name.split(" ")[0] + ",\n\n" +
+          (admin && status === "Confirmed" ? "Your session is booked:" : "Thanks for booking! Here's what we received:") + "\n\n" +
+          row[6] + "\n" + when + "\n\n" +
+          (admin && status === "Confirmed" ? "" : "We'll confirm your session shortly. ") +
+          "Reply to this email if anything needs to change.\n\n– " + CONFIG.BUSINESS_NAME
+      });
+    }
+  } catch (mailErr) { console.error("Mail error: " + mailErr); }
 
-    return json_({ ok: true });
-  } catch (err) {
-    console.error(err);
-    return json_({ ok: false, error: "server_error" });
-  } finally {
-    try { lock.releaseLock(); } catch (x) { /* ignore */ }
-  }
+  return { ok: true, row: r };
 }
 
 /**
@@ -381,9 +409,15 @@ function onStatusEdit(e) {
     if (!e || !e.range) return;
     var sh = e.range.getSheet();
     if (sh.getName() !== CONFIG.SHEET_NAME || e.range.getColumn() !== COL.STATUS || e.range.getRow() < 2) return;
+    syncCalendar_(sh, e.range.getRow());
+  } catch (err) { console.error("onStatusEdit: " + err); }
+}
+
+/** Makes the calendar event for a Bookings row match its Status. */
+function syncCalendar_(sh, row) {
+  try {
     var cal = getCalendar_();
     if (!cal) return;
-    var row = e.range.getRow();
     var v = sh.getRange(row, 1, 1, HEADERS.length).getValues()[0];
     var status = String(v[COL.STATUS - 1]), id = String(v[COL.EVENT - 1] || "");
     if (!id) return;
@@ -396,7 +430,112 @@ function onStatusEdit(e) {
       ev.setTitle("[" + status + "] " + v[COL.PACKAGE - 1] + " – " + v[COL.NAME - 1]);
       if (status === "Confirmed" && CONFIG.INVITE_CLIENT_ON_CONFIRM && v[COL.EMAIL - 1]) ev.addGuest(String(v[COL.EMAIL - 1]));
     }
-  } catch (err) { console.error("onStatusEdit: " + err); }
+  } catch (err) { console.error("syncCalendar_: " + err); }
+}
+
+/* ---------- admin API (used by the Android / phone admin app) ---------- */
+
+var BOUNDS = { slotInterval: [5, 240], bufferMinutes: [0, 480], minNoticeHours: [0, 720], maxDaysAhead: [1, 365] };
+var SETTING_LABELS = { slotInterval: "Slot interval (minutes)", bufferMinutes: "Buffer between sessions (minutes)",
+                       minNoticeHours: "Minimum notice (hours)", maxDaysAhead: "Days clients can book ahead" };
+
+function adminApi_(d) {
+  var key = String(CONFIG.ADMIN_KEY || "");
+  if (key.length < 8 || key === "change-this-to-a-long-secret" || String(d.key || "") !== key) {
+    Utilities.sleep(1500); // slows down anyone guessing the key
+    return { ok: false, error: "unauthorized" };
+  }
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  switch (d.action) {
+    case "admin_list": return adminList_();
+
+    case "admin_status": {
+      var sh = getSheet_(), row = parseInt(d.row, 10);
+      if (!(row >= 2 && row <= sh.getLastRow()) || ["Pending", "Confirmed", "Cancelled"].indexOf(d.status) < 0) return { ok: false, error: "invalid_input" };
+      sh.getRange(row, COL.STATUS).setValue(d.status);
+      syncCalendar_(sh, row);
+      return { ok: true };
+    }
+
+    case "admin_add": return createBooking_(d, true);
+
+    case "admin_hours": {
+      var av = ss.getSheetByName(TAB.AVAIL);
+      if (!av || !d.hours) return { ok: false, error: "invalid_input" };
+      var out = [];
+      [1, 2, 3, 4, 5, 6, 0].forEach(function (dow) {
+        (d.hours[dow] || []).forEach(function (w) {
+          var a = parseTime_(w[0]), b = parseTime_(w[1]);
+          if (a && b && toMin_(b) > toMin_(a)) out.push([DAY_NAMES[dow], a, b]);
+        });
+      });
+      if (out.length > 200) return { ok: false, error: "invalid_input" };
+      av.getRange(2, 1, Math.max(av.getMaxRows() - 1, 1), 3).clearContent();
+      av.getRange(2, 2, 200, 2).setNumberFormat("@");
+      if (out.length) av.getRange(2, 1, out.length, 3).setValues(out);
+      return { ok: true };
+    }
+
+    case "admin_off_add": {
+      var off = ss.getSheetByName(TAB.OFF);
+      var date = /^\d{4}-\d{2}-\d{2}$/.test(d.date) ? d.date : "";
+      if (!off || !date) return { ok: false, error: "invalid_input" };
+      var thru = /^\d{4}-\d{2}-\d{2}$/.test(d.through || "") ? d.through : "";
+      var a = parseTime_(d.from), z = parseTime_(d.to);
+      var r = Math.max(off.getLastRow() + 1, 2);
+      off.getRange(r, 1, 1, 2).setNumberFormat("@");
+      off.getRange(r, 3, 1, 2).setNumberFormat("@");
+      off.getRange(r, 1, 1, 5).setValues([[date, thru, a, z, clean_(d.note, 100)]]);
+      return { ok: true };
+    }
+
+    case "admin_off_remove": {
+      var off2 = ss.getSheetByName(TAB.OFF), rr = parseInt(d.row, 10);
+      if (!off2 || !(rr >= 2 && rr <= off2.getLastRow())) return { ok: false, error: "invalid_input" };
+      off2.deleteRow(rr);
+      return { ok: true };
+    }
+
+    case "admin_settings": {
+      var st = ss.getSheetByName(TAB.SETTINGS);
+      if (!st || !d.settings) return { ok: false, error: "invalid_input" };
+      Object.keys(SETTING_LABELS).forEach(function (k) {
+        var n = parseFloat(d.settings[k]);
+        if (isNaN(n)) return;
+        n = Math.max(BOUNDS[k][0], Math.min(BOUNDS[k][1], n));
+        var found = 0, word = k === "slotInterval" ? "interval" : k === "bufferMinutes" ? "buffer" : k === "minNoticeHours" ? "notice" : "ahead";
+        rows_(TAB.SETTINGS, 2).forEach(function (r, i) {
+          if (!found && String(r.d[0]).toLowerCase().indexOf(word) > -1) found = i + 2;
+        });
+        if (!found) { found = st.getLastRow() + 1; st.getRange(found, 1).setValue(SETTING_LABELS[k]); }
+        st.getRange(found, 2).setValue(n);
+      });
+      return { ok: true };
+    }
+  }
+  return { ok: false, error: "unknown_action" };
+}
+
+/** Everything the admin app shows: all bookings, hours, days off (with row numbers) and settings. */
+function adminList_() {
+  var sh = getSheet_(), last = sh.getLastRow(), tz = Session.getScriptTimeZone();
+  var bookings = [];
+  if (last >= 2) {
+    sh.getRange(2, 1, last - 1, HEADERS.length).getValues().forEach(function (r, i) {
+      if (!r[COL.NAME - 1] && !r[COL.DATE - 1]) return;
+      var ts = Object.prototype.toString.call(r[0]) === "[object Date]" ? Utilities.formatDate(r[0], tz, "yyyy-MM-dd HH:mm") : String(r[0]);
+      bookings.push({ row: i + 2, created: ts, status: String(r[1]), name: String(r[2]), email: String(r[3]), phone: String(r[4]),
+        instagram: String(r[5]), pkg: String(r[6]), price: String(r[7]), date: String(r[8]), start: String(r[9]), end: String(r[10]),
+        duration: r[11], location: String(r[12]), notes: String(r[13]), source: String(r[14]) });
+    });
+  }
+  var off = [];
+  rows_(TAB.OFF, 5).forEach(function (r, i) {
+    var date = cellDate_(r.v[0], r.d[0]);
+    if (!date) return;
+    off.push({ row: i + 2, date: date, through: cellDate_(r.v[1], r.d[1]), from: parseTime_(r.d[2]), to: parseTime_(r.d[3]), note: String(r.d[4] || "") });
+  });
+  return { ok: true, bookings: bookings, hours: getHours_(), off: off, settings: getSettings_() };
 }
 
 /** Daily trigger: emails clients whose Confirmed session is tomorrow. */

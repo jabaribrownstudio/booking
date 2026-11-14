@@ -6,6 +6,8 @@ Bookings are saved to a **Google Sheet** (free) and you get an email for each on
 ```
 index.html          the app
 css/styles.css      look and feel
+admin/              phone admin app (installable)
+images/logo.png     your studio logo
 js/config.js        YOUR SETTINGS (name, packages, Instagram, backend URL)
 js/app.js           app logic
 apps-script/Code.gs backend (paste into Google Apps Script)
@@ -46,6 +48,16 @@ Open your Google Sheet. Changes are live straight away, with nothing to publish.
 Booked times are removed automatically: a Pending or Confirmed booking, plus your buffer, can't be picked by another client. Set a booking to **Cancelled** to free the time again. If a time becomes unavailable while a client is filling in the form, the server refuses it and asks them to choose another.
 
 The hours in `js/config.js` are only a fallback for when no backend is connected.
+
+## Admin app on your phone
+
+A second app, at `/admin/`, lets you run everything from your Android phone: see and confirm or cancel bookings, call or WhatsApp a client, add a booking for someone who contacted you directly, edit your weekly hours, block days off, and change the booking settings. It works with the same Google Sheet.
+
+1. In `Code.gs`, change `ADMIN_KEY` to a long secret only you know (20+ letters and numbers). Paste the new `Code.gs` into Apps Script and create a new deployment version.
+2. Make sure `endpoint` in `js/config.js` is set to your Web app URL, and push to GitHub.
+3. On your phone, open `https://YOUR-USERNAME.github.io/booking/admin/` in Chrome, enter your key, then use the Chrome menu (three dots) and choose **Install app** (or **Add to Home screen**). It then opens full screen from your home screen like a normal app.
+
+Keep the key private. It is saved only on your phone, and **Sign out** (top right) removes it. To change it, edit `ADMIN_KEY`, redeploy, and sign in again. The admin page is not linked from your booking page, and anyone without the key sees only the sign-in screen.
 
 ## Google Calendar reminders
 

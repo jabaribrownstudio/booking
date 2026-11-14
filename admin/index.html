@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Studio Admin</title>
+  <meta name="robots" content="noindex">
+  <meta name="theme-color" content="#3a4046">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon-192.png">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Raleway:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="admin.css">
+</head>
+<body>
+
+<section id="login" class="login" hidden>
+  <img class="login-logo" src="../images/logo.png" alt="Jabari Brown Studio">
+  <h1>Studio admin</h1>
+  <p class="muted">Enter your admin key to manage bookings and your availability.</p>
+  <form id="login-form" autocomplete="off">
+    <label for="key">Admin key</label>
+    <input id="key" type="password" autocomplete="current-password" autocapitalize="none" spellcheck="false" required>
+    <p id="login-err" class="err" role="alert"></p>
+    <button class="btn primary block" type="submit" id="login-btn">Sign in</button>
+  </form>
+  <p class="muted small">This is the secret you set as <code>ADMIN_KEY</code> in your Apps Script. It is saved only on this phone.</p>
+</section>
+
+<div id="app" hidden>
+  <header class="top">
+    <img class="logo" src="../images/logo.png" alt="Jabari Brown Studio">
+    <div class="top-actions">
+      <button class="icon-btn" id="refresh" type="button" aria-label="Refresh"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v5h-5"/></svg></button>
+      <button class="icon-btn" id="signout" type="button" aria-label="Sign out"><svg viewBox="0 0 24 24"><path d="M9 4H5v16h4M16 8l4 4-4 4M20 12H9"/></svg></button>
+    </div>
+  </header>
+
+  <main>
+    <section id="tab-bookings">
+      <div class="seg" id="filters" role="tablist">
+        <button type="button" data-f="upcoming" class="on">Upcoming</button>
+        <button type="button" data-f="pending">Pending <span class="badge" id="pend-count" hidden></span></button>
+        <button type="button" data-f="past">Past</button>
+        <button type="button" data-f="cancelled">Cancelled</button>
+      </div>
+      <div id="list" class="list"></div>
+    </section>
+
+    <section id="tab-hours" hidden>
+      <h2>Weekly hours</h2>
+      <p class="muted">The times clients can book. Add a second period for a lunch break.</p>
+      <div id="week" class="card"></div>
+      <button class="btn primary block" id="save-hours" type="button" disabled>Save weekly hours</button>
+
+      <h2>Days off and blocked time</h2>
+      <p class="muted">Leave From and To empty to block the whole day.</p>
+      <form id="off-form" class="card grid2">
+        <label>Date<input type="date" id="off-date" required></label>
+        <label>Through <span class="muted">(optional)</span><input type="date" id="off-thru"></label>
+        <label>From <span class="muted">(optional)</span><input type="time" id="off-from"></label>
+        <label>To <span class="muted">(optional)</span><input type="time" id="off-to"></label>
+        <label class="span2">Note <span class="muted">(optional)</span><input type="text" id="off-note" maxlength="100" placeholder="Holiday, wedding, travel"></label>
+        <button class="btn block span2" type="submit" id="off-add">Block this time</button>
+      </form>
+      <ul id="off-list" class="offlist"></ul>
+    </section>
+
+    <section id="tab-settings" hidden>
+      <h2>Booking settings</h2>
+      <form id="set-form" class="card">
+        <label>Time between start times (minutes)<input type="number" inputmode="numeric" id="s-interval" min="5" max="240" step="5"></label>
+        <p class="hint">30 offers 9:00, 9:30, 10:00.</p>
+        <label>Buffer between sessions (minutes)<input type="number" inputmode="numeric" id="s-buffer" min="0" max="480" step="5"></label>
+        <p class="hint">Gap kept before and after every booking, for travel or setup.</p>
+        <label>Minimum notice (hours)<input type="number" inputmode="numeric" id="s-notice" min="0" max="720"></label>
+        <p class="hint">24 means clients can't book anything sooner than a day from now.</p>
+        <label>Days clients can book ahead<input type="number" inputmode="numeric" id="s-ahead" min="1" max="365"></label>
+        <button class="btn primary block" type="submit" id="save-set">Save settings</button>
+      </form>
+    </section>
+  </main>
+
+  <button class="fab" id="fab" type="button" aria-label="Add a booking"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg><span>Add booking</span></button>
+
+  <nav class="tabs" id="tabs">
+    <button type="button" data-t="bookings" class="on"><svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>Bookings</button>
+    <button type="button" data-t="hours"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3 2"/></svg>Availability</button>
+    <button type="button" data-t="settings"><svg viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg>Settings</button>
+  </nav>
+</div>
+
+<div id="sheet" class="sheet" hidden>
+  <div class="sheet-bg" data-close></div>
+  <form class="sheet-card" id="add-form" novalidate>
+    <div class="sheet-head"><h2>Add a booking</h2><button type="button" class="icon-btn" data-close aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+    <div class="grid2">
+      <label class="span2">Package<select id="a-pkg"></select></label>
+      <label>Date<input type="date" id="a-date" required></label>
+      <label>Start time<input type="time" id="a-time" required></label>
+      <label>Length (minutes)<input type="number" inputmode="numeric" id="a-dur" min="5" max="720"></label>
+      <label>Price<input type="number" inputmode="numeric" id="a-price" min="0"></label>
+      <label class="span2">Client name<input type="text" id="a-name" autocomplete="off" required></label>
+      <label>Phone<input type="tel" id="a-phone" autocomplete="off"></label>
+      <label>Email <span class="muted">(optional)</span><input type="email" id="a-email" autocomplete="off" autocapitalize="none"></label>
+      <label class="span2">Location<input type="text" id="a-loc"></label>
+      <label class="span2">Notes<textarea id="a-notes" rows="2"></textarea></label>
+      <label class="span2">Status<select id="a-status"><option>Confirmed</option><option>Pending</option></select></label>
+    </div>
+    <label class="check" id="a-notify-row"><input type="checkbox" id="a-notify"> Email the client a confirmation</label>
+    <label class="check" id="a-force-row" hidden><input type="checkbox" id="a-force"> Book anyway, even though it overlaps another booking</label>
+    <p class="err" id="add-err" role="alert"></p>
+    <button class="btn primary block" type="submit" id="add-btn">Add booking</button>
+  </form>
+</div>
+
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+<script src="../js/config.js"></script>
+<script src="admin.js"></script>
+</body>
+</html>
