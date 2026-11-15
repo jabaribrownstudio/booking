@@ -705,7 +705,7 @@ function adminApi_(d) {
 
 /* ---------- invoices, estimates and money tracking ---------- */
 
-var TAB_INV = "Invoices", TAB_FEES = "Fees", TAB_TAXES = "Taxes";
+var TAB_INV = "Invoices", TAB_FEES = "Products & services", TAB_TAXES = "Taxes";
 var INV_HEADERS = ["Number", "Type", "Status", "Date", "Due / valid until", "Client", "Email", "Phone", "Booking row",
                    "Items (JSON)", "Total", "Paid", "Payments (JSON)", "Notes", "Created", "Sent", "From estimate", "Discount (JSON)", "Taxes (JSON)"];
 
@@ -769,10 +769,14 @@ function taxesSheet_() {
 
 function feesSheet_() {
   var ss = SpreadsheetApp.getActiveSpreadsheet(), sh = ss.getSheetByName(TAB_FEES);
-  if (sh) return sh;
+  if (!sh) { sh = ss.getSheetByName("Fees"); if (sh) sh.setName(TAB_FEES); } // the tab used to be called Fees
+  if (sh) {
+    if (String(sh.getRange(1, 4).getValue()) !== "Quantity") sh.getRange(1, 1, 1, 4).setValues([["Item", "Description (optional)", "Price", "Quantity"]]).setFontWeight("bold");
+    return sh;
+  }
   sh = ss.insertSheet(TAB_FEES);
-  sh.getRange(1, 1, 1, 3).setValues([["Item", "Description (optional)", "Price"]]).setFontWeight("bold");
-  sh.getRange(2, 1, 1, 3).setValues([["Permit fee", "", 0]]);
+  sh.getRange(1, 1, 1, 4).setValues([["Item", "Description (optional)", "Price", "Quantity"]]).setFontWeight("bold");
+  sh.getRange(2, 1, 1, 4).setValues([["Permit fee", "", 0, 1]]);
   sh.setFrozenRows(1);
   sh.setColumnWidth(1, 220); sh.setColumnWidth(2, 320);
   return sh;
@@ -1111,7 +1115,8 @@ function taxesList_() {
 }
 
 function feesList_() {
-  return rows_(TAB_FEES, 3).map(function (r, i) { return { row: i + 2, name: String(r.d[0]), desc: String(r.d[1]), price: +r.v[2] || 0 }; })
+  feesSheet_();
+  return rows_(TAB_FEES, 4).map(function (r, i) { return { row: i + 2, name: String(r.d[0]), desc: String(r.d[1]), price: +r.v[2] || 0, qty: +r.v[3] > 0 ? +r.v[3] : 1 }; })
     .filter(function (f) { return f.name; });
 }
 
@@ -1236,14 +1241,14 @@ function moneyApi_(d) {
       var name = cleanText_(d.name, 100), price = +d.price;
       if (!name || isNaN(price) || price < 0 || price > 1e8) return { ok: false, error: "invalid_input" };
       var fs = feesSheet_(), r = Math.max(fs.getLastRow() + 1, 2);
-      fs.getRange(r, 1, 1, 3).setValues([[clean_(name, 100), clean_(d.desc, 200), price]]);
+      fs.getRange(r, 1, 1, 4).setValues([[clean_(name, 100), clean_(d.desc, 200), price, +d.qty > 0 ? Math.min(+d.qty, 1000) : 1]]);
       return { ok: true };
     }
 
     case "admin_fee_update": {
       var fu = feesSheet_(), ur = parseInt(d.row, 10), un = cleanText_(d.name, 100), up = +d.price;
       if (!(ur >= 2 && ur <= fu.getLastRow()) || !un || isNaN(up) || up < 0 || up > 1e8) return { ok: false, error: "invalid_input" };
-      fu.getRange(ur, 1, 1, 3).setValues([[clean_(un, 100), clean_(d.desc, 200), up]]);
+      fu.getRange(ur, 1, 1, 4).setValues([[clean_(un, 100), clean_(d.desc, 200), up, +d.qty > 0 ? Math.min(+d.qty, 1000) : 1]]);
       return { ok: true };
     }
 

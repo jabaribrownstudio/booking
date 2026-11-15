@@ -356,16 +356,16 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun addFee(name: String, desc: String, price: Double) {
+    fun addFee(name: String, desc: String, price: Double, qty: Double) {
         viewModelScope.launch {
-            val r = act("admin_fee_add", JSONObject().put("name", name).put("desc", desc).put("price", price))
+            val r = act("admin_fee_add", JSONObject().put("name", name).put("desc", desc).put("price", price).put("qty", qty))
             moneyDone(r, "Saved", "Couldn't save that item.")
         }
     }
 
-    fun updateFee(row: Int, name: String, desc: String, price: Double) {
+    fun updateFee(row: Int, name: String, desc: String, price: Double, qty: Double) {
         viewModelScope.launch {
-            val r = act("admin_fee_update", JSONObject().put("row", row).put("name", name).put("desc", desc).put("price", price))
+            val r = act("admin_fee_update", JSONObject().put("row", row).put("name", name).put("desc", desc).put("price", price).put("qty", qty))
             moneyDone(r, "Saved", "Couldn't save that item.")
         }
     }

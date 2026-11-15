@@ -41,7 +41,7 @@ fun HomeScreen(vm: MainViewModel) {
         bottomBar = {
             NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
                 NavigationBarItem(selected = tab == 0, onClick = { tab = 0 }, icon = { Icon(Icons.Outlined.CalendarMonth, null) }, label = { Text("Bookings") })
-                if (canManage) NavigationBarItem(selected = tab == 3, onClick = { tab = 3 }, icon = { Icon(Icons.Outlined.Receipt, null) }, label = { Text("Invoices") })
+                if (canManage) NavigationBarItem(selected = tab == 3, onClick = { tab = 3 }, icon = { Icon(Icons.Outlined.Receipt, null) }, label = { Text("Accounting") })
                 if (canManage) NavigationBarItem(selected = tab == 1, onClick = { tab = 1 }, icon = { Icon(Icons.Outlined.EventAvailable, null) }, label = { Text("Availability") })
                 NavigationBarItem(selected = tab == 2, onClick = { tab = 2 }, icon = { Icon(Icons.Outlined.Person, null) }, label = { Text("Account") })
             }

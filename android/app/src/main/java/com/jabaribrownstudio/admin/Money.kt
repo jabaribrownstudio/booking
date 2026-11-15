@@ -40,7 +40,7 @@ fun totals(items: List<LineItem>, discount: Discount?, taxes: List<TaxRate>): To
 fun discountJson(d: Discount?): org.json.JSONObject? = d?.let { org.json.JSONObject().put("type", it.type).put("value", it.value) }
 fun taxesJson(t: List<TaxRate>): JSONArray { val a = JSONArray(); t.forEach { a.put(JSONObject().put("name", it.name).put("rate", it.rate)) }; return a }
 
-data class Fee(val row: Int, val name: String, val desc: String, val price: Double)
+data class Fee(val row: Int, val name: String, val desc: String, val price: Double, val qty: Double = 1.0)
 
 data class Finance(
     val year: Int, val collected: Double, val invoiced: Double, val outstanding: Double, val overdue: Double,
@@ -89,7 +89,7 @@ fun parseMoney(j: JSONObject): MoneyData {
     val fa = j.optJSONArray("fees") ?: JSONArray()
     for (i in 0 until fa.length()) {
         val o = fa.getJSONObject(i)
-        fees.add(Fee(o.optInt("row"), o.optString("name"), o.optString("desc"), o.optDouble("price", 0.0)))
+        fees.add(Fee(o.optInt("row"), o.optString("name"), o.optString("desc"), o.optDouble("price", 0.0), o.optDouble("qty", 1.0)))
     }
     val savedTaxes = ArrayList<SavedTax>()
     val xa = j.optJSONArray("taxes") ?: JSONArray()
