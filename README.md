@@ -173,3 +173,10 @@ The source is in `android/`. Every change to it is built by GitHub Actions and p
 Install: open that page on your phone, download `studio-admin.apk`, tap it, and allow "Install unknown apps" for your browser if asked. New builds install over the old one.
 Sign in with your username and password (or the admin key under "Admin key"). Then press and hold the home screen, tap Widgets, and add **JB Studio Admin → Upcoming**.
 Team accounts, owner setup and recovery stay in the web admin app. The build uses a fixed debug signing key stored in the repo, so keep the repo private if you care about who can sign builds.
+
+## Invoices and estimates
+
+- Confirming a booking creates an invoice (numbered from `INVOICE_START_NUMBER` in `Code.gs`, currently 41) and emails it to the client as a PDF with the confirmation. In the Android app you can tick extra fees (such as a permit fee) first. Manage the list of fees under Invoices → Fees; they live in the **Fees** tab of the sheet.
+- The **Invoices** tab in the Android app (managers and owners) lists invoices and estimates, records payments, emails or shares the PDF, converts an estimate into an invoice, and shows what you collected each month and year.
+- Everything is stored in the **Invoices** tab of your sheet. Your business details and bank information are in `CONFIG` at the top of `Code.gs`.
+- After updating `Code.gs`: run `testInvoice` once from the editor (it asks for permission and emails you a sample), then Deploy → Manage deployments → New version. If you use the Cloudflare login, redeploy `worker/worker.js` too.
