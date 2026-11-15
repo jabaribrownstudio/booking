@@ -649,11 +649,16 @@ fun ConfirmBookingDialog(vm: MainViewModel, b: Booking, onDismiss: () -> Unit) {
             }
         },
         confirmButton = {
+            Column(horizontalAlignment = Alignment.End) {
+            TextButton(onClick = {
+                onDismiss(); vm.setStatus(b.row, "Confirmed", noInvoice = true)
+            }) { Text(if (b.email.isNotBlank()) "Confirm, email only (invoice later)" else "Confirm without invoice") }
             TextButton(onClick = {
                 val extras = fees.filter { it.row in picked }.map { LineItem(it.name, it.desc, picked[it.row]?.toDoubleOrNull()?.takeIf { q -> q > 0 } ?: it.qty, it.price) } +
                     custom.filter { it.name.isNotBlank() }.map { LineItem(it.name.trim(), "", it.qty.toDoubleOrNull()?.takeIf { q -> q > 0 } ?: 1.0, it.price.toDoubleOrNull() ?: 0.0) }
                 onDismiss(); vm.setStatus(b.row, "Confirmed", extras, send && b.email.isNotBlank(), discount = discountOf(discType, discValue), taxes = taxesOf(taxes))
-            }) { Text("Confirm") }
+            }) { Text("Confirm and invoice") }
+            }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )

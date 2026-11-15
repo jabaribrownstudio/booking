@@ -598,7 +598,7 @@ function adminApi_(d) {
       sh.getRange(row, COL.HANDLED).setValue(me.name);
       if (before !== d.status) {
         var invOpt = d.invoice || null, inv = null;
-        if (d.status === "Confirmed" && (invOpt || CONFIG.AUTO_INVOICE_ON_CONFIRM)) {
+        if (d.status === "Confirmed" && !(invOpt && invOpt.skip === true) && (invOpt || CONFIG.AUTO_INVOICE_ON_CONFIRM)) {
           try { inv = createInvoiceForBooking_(row, invOpt ? invOpt.extras : [], invOpt ? invOpt.discount : null, invOpt ? invOpt.taxes : []); } catch (ie) { console.error("invoice: " + ie); }
         }
         var why = d.status === "Cancelled" ? cleanText_(d.comment, 500) : "";

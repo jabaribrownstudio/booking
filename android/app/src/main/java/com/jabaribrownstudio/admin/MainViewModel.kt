@@ -177,14 +177,15 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun setStatus(row: Int, status: String, extras: List<LineItem>? = null, sendInvoice: Boolean = true, comment: String = "", discount: Discount? = null, taxes: List<TaxRate> = emptyList()) {
+    fun setStatus(row: Int, status: String, extras: List<LineItem>? = null, sendInvoice: Boolean = true, comment: String = "", discount: Discount? = null, taxes: List<TaxRate> = emptyList(), noInvoice: Boolean = false) {
         // Show the change at once; the refresh below corrects it if the server disagrees.
         data?.let { d -> data = d.copy(bookings = d.bookings.map { if (it.row == row) it.copy(status = status) else it }) }
         viewModelScope.launch {
             busy = true
             val d = JSONObject().put("row", row).put("status", status)
             if (comment.isNotBlank()) d.put("comment", comment.trim())
-            if (status == "Confirmed" && extras != null) d.put("invoice", JSONObject().put("extras", itemsJson(extras)).put("send", sendInvoice).put("discount", discountJson(discount)).put("taxes", taxesJson(taxes)))
+            if (status == "Confirmed" && noInvoice) d.put("invoice", JSONObject().put("skip", true))
+            else if (status == "Confirmed" && extras != null) d.put("invoice", JSONObject().put("extras", itemsJson(extras)).put("send", sendInvoice).put("discount", discountJson(discount)).put("taxes", taxesJson(taxes)))
             val r = act("admin_status", d)
             busy = false
             if (r != null) {
