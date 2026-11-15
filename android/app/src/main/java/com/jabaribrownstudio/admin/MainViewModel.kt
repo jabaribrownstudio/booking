@@ -337,6 +337,24 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
         }
     }
 
+    fun remindBooking(row: Int) {
+        viewModelScope.launch {
+            busy = true
+            val r = act("admin_remind_booking", JSONObject().put("row", row))
+            busy = false
+            if (r != null) message = if (r.ok) "Reminder sent to the client" else if (r.error == "no_email") "This booking has no email address." else "Couldn't send the reminder."
+        }
+    }
+
+    fun remindInvoice(row: Int) {
+        viewModelScope.launch {
+            busy = true
+            val r = act("admin_inv_remind", JSONObject().put("row", row))
+            busy = false
+            if (r != null) message = if (r.ok) "Payment reminder sent" else if (r.error == "no_email") "Add the client's email address first." else "Couldn't send the reminder."
+        }
+    }
+
     fun sendInvoice(row: Int) {
         viewModelScope.launch {
             busy = true

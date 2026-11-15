@@ -313,6 +313,7 @@ private fun InvoiceDetail(vm: MainViewModel, inv: Invoice, onClose: () -> Unit, 
                 Row { Text("Amount due", Modifier.weight(1f), fontWeight = FontWeight.Bold); Text(Fmt.cash(inv.owing), fontWeight = FontWeight.Bold) }
             }
             Spacer(Modifier.height(4.dp))
+            if (inv.isInvoice && inv.status in listOf("Sent", "Partial", "Draft") && inv.owing > 0) OutlinedButton(onClick = { vm.remindInvoice(inv.row) }, enabled = !vm.busy, modifier = Modifier.fillMaxWidth().height(48.dp)) { Text("Send payment reminder") }
             if (inv.isInvoice && inv.status != "Void" && inv.status != "Paid") Button(onClick = { paying = true }, modifier = Modifier.fillMaxWidth().height(48.dp)) { Text("Record payment") }
             if (!inv.isInvoice && inv.status != "Declined" && m0(vm, inv) == null) Button(onClick = { converting = inv }, modifier = Modifier.fillMaxWidth().height(48.dp)) { Text("Convert to invoice") }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

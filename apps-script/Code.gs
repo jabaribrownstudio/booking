@@ -587,6 +587,10 @@ function adminApi_(d) {
   if ((OWNER_ONLY[d.action] && me.role !== "Owner") || ((MANAGER_UP[d.action] || MONEY_ACTIONS[d.action]) && me.role === "Staff")) return { ok: false, error: "forbidden" };
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   switch (d.action) {
+    case "admin_remind_booking": {
+      var rr = remindBooking_(parseInt(d.row, 10));
+      return rr === "ok" ? { ok: true } : { ok: false, error: rr === "no_email" ? "no_email" : "invalid_input" };
+    }
     case "admin_push_register": return pushRegister_(d.token, me.name, true);
     case "admin_push_unregister": return pushRegister_(d.token, me.name, false);
     case "admin_list": { var lst = adminList_(d.all === true); lst.me = me; return lst; }
@@ -725,7 +729,7 @@ var PACKAGE_DETAILS = {
 };
 
 var MONEY_ACTIONS = { admin_fee_update: 1, admin_tax_add: 1, admin_tax_remove: 1, admin_inv_receipt: 1, admin_money: 1, admin_inv_save: 1, admin_inv_send: 1, admin_inv_pay: 1, admin_inv_unpay: 1, admin_inv_status: 1,
-                      admin_inv_convert: 1, admin_inv_pdf: 1, admin_inv_delete: 1, admin_fee_add: 1, admin_fee_remove: 1 };
+                      admin_inv_convert: 1, admin_inv_remind: 1, admin_inv_pdf: 1, admin_inv_delete: 1, admin_fee_add: 1, admin_fee_remove: 1 };
 
 function safeJson_(v, fallback) { try { var x = JSON.parse(String(v)); return x == null ? fallback : x; } catch (e) { return fallback; } }
 function tz_() { return Session.getScriptTimeZone(); }
@@ -1195,6 +1199,13 @@ function moneyApi_(d) {
       return { ok: true, row: inv.row, number: inv.number, sent: sent };
     }
 
+    case "admin_inv_remind": {
+      var ri = getInv_(d.row);
+      if (!ri) return { ok: false, error: "invalid_input" };
+      var rres = remindInvoice_(ri);
+      return rres === "ok" ? { ok: true } : { ok: false, error: rres === "no_email" ? "no_email" : "invalid_input" };
+    }
+
     case "admin_inv_send": {
       var s = getInv_(d.row);
       if (!s || s.status === "Void") return { ok: false, error: "invalid_input" };
@@ -1348,6 +1359,45 @@ function adminList_(all) {
     off.push({ row: i + 2, date: date, through: cellDate_(r.v[1], r.d[1]), from: parseTime_(r.d[2]), to: parseTime_(r.d[3]), note: String(r.d[4] || "") });
   });
   return { ok: true, bookings: bookings, truncated: !all, hours: getHours_(), off: off, settings: getSettings_() };
+}
+
+/** Emails one client a reminder about their booking. Used by the "Send reminder" button. Returns "ok", "no_email" or "invalid". */
+function remindBooking_(row) {
+  var sh = getSheet_();
+  if (!(row >= 2 && row <= sh.getLastRow())) return "invalid";
+  var r = sh.getRange(row, 1, 1, HEADERS.length).getValues()[0];
+  var status = String(r[COL.STATUS - 1]), email = String(r[COL.EMAIL - 1] || "");
+  if (status === "Cancelled") return "invalid";
+  if (!validEmail_(email)) return "no_email";
+  var date = String(r[COL.DATE - 1]), today = todayStr_();
+  var tomorrow = Utilities.formatDate(new Date(Date.now() + 86400000), Session.getScriptTimeZone(), "yyyy-MM-dd");
+  var day = date === today ? "today" : date === tomorrow ? "tomorrow" : "on " + niceDate_(date);
+  mail_({
+    to: email, replyTo: CONFIG.OWNER_EMAIL, name: CONFIG.BUSINESS_NAME,
+    subject: "Reminder: your session " + (day.indexOf("on ") === 0 ? "on " + niceDate_(date) : day) + " – " + CONFIG.BUSINESS_NAME,
+    body: "Hi " + String(r[COL.NAME - 1]).split(" ")[0] + ",\n\nA quick reminder about your " + r[COL.PACKAGE - 1] + " " + day + " at " +
+      niceTime_(String(r[COL.START - 1])) + (r[12] ? " (" + r[12] + ")" : "") +
+      (status === "Pending" ? "\n\nYour booking is still waiting for confirmation." : "") +
+      "\n\nReply to this email if you need to change anything.\n\nSee you then!\n– " + CONFIG.BUSINESS_NAME
+  });
+  return "ok";
+}
+
+/** Emails the client a reminder that an invoice is still unpaid (with the invoice attached). */
+function remindInvoice_(inv) {
+  if (inv.type !== "Invoice" || inv.status === "Paid" || inv.status === "Void") return "invalid";
+  var due = Math.max(0, inv.total - inv.paid);
+  if (due <= 0.004) return "invalid";
+  if (!validEmail_(inv.email)) return "no_email";
+  var overdue = inv.due && inv.due < todayStr_();
+  mail_({
+    to: inv.email, replyTo: CONFIG.OWNER_EMAIL, name: CONFIG.BUSINESS_NAME,
+    subject: "Payment reminder: invoice #" + inv.number + " – " + CONFIG.BUSINESS_NAME,
+    body: "Hi " + inv.client.split(" ")[0] + ",\n\nA friendly reminder that invoice #" + inv.number + " is still unpaid.\n\nAmount due: " + money_(due) +
+      "\nPayment " + (overdue ? "was due: " : "due: ") + fmtDate_(inv.due) + "\n\nThe invoice is attached again for your convenience. If you've already paid, please ignore this message and reply with the details so I can update my records.\n\n– " + CONFIG.BUSINESS_NAME,
+    attachments: [invoicePdf_(inv)]
+  });
+  return "ok";
 }
 
 /** Daily trigger: emails clients whose Confirmed session is tomorrow. */

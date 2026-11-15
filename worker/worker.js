@@ -13,11 +13,11 @@ const REC_ITER = 100000; // Workers allow at most 100,000 PBKDF2 rounds
 const RANK = { Staff: 1, Manager: 2, Owner: 3 };
 // The lowest role allowed to run each Apps Script action. Anything not listed is refused.
 const ACTION_MIN = {
-  admin_list: "Staff", admin_status: "Staff", admin_add: "Staff", admin_push_register: "Staff", admin_push_unregister: "Staff",
+  admin_list: "Staff", admin_status: "Staff", admin_add: "Staff", admin_remind_booking: "Staff", admin_push_register: "Staff", admin_push_unregister: "Staff",
   admin_hours: "Manager", admin_off_add: "Manager", admin_off_remove: "Manager", admin_settings: "Manager",
   // invoices, estimates and money
   admin_money: "Manager", admin_inv_save: "Manager", admin_inv_send: "Manager", admin_inv_pay: "Manager", admin_inv_unpay: "Manager",
-  admin_inv_status: "Manager", admin_inv_convert: "Manager", admin_inv_pdf: "Manager", admin_inv_receipt: "Manager", admin_inv_delete: "Manager",
+  admin_inv_status: "Manager", admin_inv_convert: "Manager", admin_inv_remind: "Manager", admin_inv_pdf: "Manager", admin_inv_receipt: "Manager", admin_inv_delete: "Manager",
   admin_fee_add: "Manager", admin_fee_remove: "Manager", admin_fee_update: "Manager", admin_tax_add: "Manager", admin_tax_remove: "Manager"
 };
 

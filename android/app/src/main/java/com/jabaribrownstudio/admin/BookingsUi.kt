@@ -130,7 +130,7 @@ fun BookingsTab(vm: MainViewModel, pad: PaddingValues) {
                             )
                         }
                         items(bs, key = { it.row }) { b ->
-                            BookingCard(b, expanded = vm.openRow == b.row, onToggle = { vm.openRow = if (vm.openRow == b.row) -1 else b.row }, onStatus = { s, note -> if (s == "Confirmed" && d?.me?.isManager == true) confirming = b else vm.setStatus(b.row, s, comment = note) })
+                            BookingCard(b, expanded = vm.openRow == b.row, onToggle = { vm.openRow = if (vm.openRow == b.row) -1 else b.row }, onStatus = { s, note -> if (s == "Confirmed" && d?.me?.isManager == true) confirming = b else vm.setStatus(b.row, s, comment = note) }, onRemind = { vm.remindBooking(b.row) })
                             Spacer(Modifier.height(8.dp))
                         }
                     }
@@ -158,7 +158,7 @@ fun BookingsTab(vm: MainViewModel, pad: PaddingValues) {
                 BookingCard(focus, expanded = true, onToggle = { }, onStatus = { s, note ->
                     vm.focusRow = -1
                     if (s == "Confirmed" && d?.me?.isManager == true) confirming = focus else vm.setStatus(focus.row, s, comment = note)
-                })
+                }, onRemind = { vm.remindBooking(focus.row) })
             }
         }
     }
@@ -184,7 +184,7 @@ private fun StatusPill(status: String) {
 }
 
 @Composable
-private fun BookingCard(b: Booking, expanded: Boolean, onToggle: () -> Unit, onStatus: (String, String) -> Unit) {
+private fun BookingCard(b: Booking, expanded: Boolean, onToggle: () -> Unit, onStatus: (String, String) -> Unit, onRemind: () -> Unit = {}) {
     val ctx = LocalContext.current
     var confirmCancel by remember { mutableStateOf(false) }
     var cancelNote by remember { mutableStateOf("") }
@@ -224,6 +224,11 @@ private fun BookingCard(b: Booking, expanded: Boolean, onToggle: () -> Unit, onS
                     }
                     if (b.email.isNotBlank()) item { Contact("Email", Icons.Outlined.Email) { open(ctx, Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:" + b.email))) } }
                     if (b.instagram.isNotBlank()) item { Contact("Instagram", Icons.Outlined.PhotoCamera) { open(ctx, Intent(Intent.ACTION_VIEW, Uri.parse("https://instagram.com/" + b.instagram.trim().trimStart('@').substringAfterLast('/')))) } }
+                }
+                if (b.isActive && b.email.isNotBlank()) {
+                    Spacer(Modifier.height(10.dp))
+                    OutlinedButton(onClick = onRemind, modifier = Modifier.fillMaxWidth()) { Text("Send reminder to client") }
+                    if (b.status == "Confirmed") Text("The client is also reminded automatically the day before.", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
                 }
                 Spacer(Modifier.height(12.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
