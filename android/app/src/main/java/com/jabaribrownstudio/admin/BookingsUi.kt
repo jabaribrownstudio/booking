@@ -73,6 +73,7 @@ private fun filtered(all: List<Booking>, f: String): List<Booking> {
 fun BookingsTab(vm: MainViewModel, pad: PaddingValues) {
     val d = vm.data
     var showAdd by remember { mutableStateOf(false) }
+    var confirming by remember { mutableStateOf<Booking?>(null) }
     Box(Modifier.fillMaxSize().padding(pad)) {
         PullToRefreshBox(isRefreshing = vm.loading, onRefresh = { vm.load() }, modifier = Modifier.fillMaxSize()) {
             val all = d?.bookings ?: emptyList()
@@ -114,7 +115,7 @@ fun BookingsTab(vm: MainViewModel, pad: PaddingValues) {
                             )
                         }
                         items(bs, key = { it.row }) { b ->
-                            BookingCard(b, expanded = vm.openRow == b.row, onToggle = { vm.openRow = if (vm.openRow == b.row) -1 else b.row }, onStatus = { s -> vm.setStatus(b.row, s) })
+                            BookingCard(b, expanded = vm.openRow == b.row, onToggle = { vm.openRow = if (vm.openRow == b.row) -1 else b.row }, onStatus = { s -> if (s == "Confirmed" && d?.me?.isManager == true) confirming = b else vm.setStatus(b.row, s) })
                             Spacer(Modifier.height(8.dp))
                         }
                     }
@@ -129,6 +130,7 @@ fun BookingsTab(vm: MainViewModel, pad: PaddingValues) {
         )
     }
     if (showAdd) AddBookingSheet(vm, onClose = { showAdd = false })
+    confirming?.let { ConfirmBookingDialog(vm, it) { confirming = null } }
 }
 
 @Composable

@@ -30,6 +30,10 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
     var hoursDraft by mutableStateOf<Hours>(emptyMap())
     var hoursDirty by mutableStateOf(false)
 
+    var money by mutableStateOf<MoneyData?>(null)
+    var moneyYear by mutableStateOf(0)
+    var moneyLoading by mutableStateOf(false)
+
     val scriptUrl: String get() = store.scriptUrl
     val workerUrl: String get() = store.workerUrl
     val mode: String get() = store.mode
@@ -43,7 +47,7 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
 
     private fun forceSignOut(note: String) {
         store.signOut()
-        signedIn = false; mustChange = false; data = null
+        signedIn = false; mustChange = false; data = null; money = null
         loginError = note
         viewModelScope.launch { BookingsWidget().updateAll(app) }
     }
@@ -76,6 +80,7 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
                 if (!hoursDirty) hoursDraft = d.hours
                 store.saveWidget(Sync.upcoming(d.bookings).take(30), d.me.name)
                 try { BookingsWidget().updateAll(app) } catch (e: Exception) { }
+                if (d.me.isManager && money == null) loadMoney()
             } else if (r != null) message = "Couldn't load your data."
             loading = false
         }
@@ -112,15 +117,18 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun setStatus(row: Int, status: String) {
+    fun setStatus(row: Int, status: String, extras: List<LineItem>? = null, sendInvoice: Boolean = true) {
         viewModelScope.launch {
             busy = true
-            val r = act("admin_status", JSONObject().put("row", row).put("status", status))
+            val d = JSONObject().put("row", row).put("status", status)
+            if (status == "Confirmed" && extras != null) d.put("invoice", JSONObject().put("extras", itemsJson(extras)).put("send", sendInvoice))
+            val r = act("admin_status", d)
             busy = false
             if (r != null) {
                 message = if (r.ok) (if (status == "Cancelled") "Booking cancelled" else "Marked " + status.lowercase()) else "Couldn't update that booking."
                 openRow = -1
                 loading = false; load()
+                if (status == "Confirmed") loadMoney()
             }
         }
     }
@@ -201,6 +209,128 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
             )
             busy = false
             if (r != null) { message = if (r.ok) "Settings saved" else "Couldn't save settings."; loading = false; load() }
+        }
+    }
+
+    /* ---- invoices, estimates, money ---- */
+    fun loadMoney(year: Int = moneyYear) {
+        viewModelScope.launch {
+            moneyLoading = true
+            val r = act("admin_money", JSONObject().put("year", year))
+            if (r != null && r.ok) { val m = parseMoney(r.json); money = m; moneyYear = m.finance.year }
+            else if (r != null) message = "Couldn't load invoices."
+            moneyLoading = false
+        }
+    }
+
+    private fun moneyDone(r: ApiResult?, okMsg: String, failMsg: String): Boolean {
+        if (r == null) return false
+        message = if (r.ok) okMsg else failMsg
+        if (r.ok) loadMoney()
+        return r.ok
+    }
+
+    /** Saves an invoice or estimate. onDone gets null on success or an error code ("no_email", "invalid_input", "locked", "other"). */
+    fun saveInvoice(
+        row: Int, type: String, client: String, email: String, phone: String, bookingRow: Int, items: List<LineItem>,
+        date: String, notes: String, send: Boolean, onDone: (String?) -> Unit
+    ) {
+        viewModelScope.launch {
+            busy = true
+            val d = JSONObject().put("type", type).put("client", client).put("email", email).put("phone", phone)
+                .put("bookingRow", bookingRow).put("items", itemsJson(items)).put("date", date).put("notes", notes).put("send", send)
+            if (row > 0) d.put("row", row)
+            val r = act("admin_inv_save", d)
+            busy = false
+            if (r == null) { onDone("other"); return@launch }
+            if (r.ok) {
+                message = (if (type == "Estimate") "Estimate #" else "Invoice #") + r.json.optInt("number") + (if (r.json.optBoolean("sent")) " saved and emailed" else " saved")
+                loadMoney(); onDone(null)
+            } else {
+                if (r.error == "no_email") loadMoney()
+                onDone(if (r.error == "no_email" || r.error == "invalid_input" || r.error == "locked") r.error else "other")
+            }
+        }
+    }
+
+    fun sendInvoice(row: Int) {
+        viewModelScope.launch {
+            busy = true
+            val r = act("admin_inv_send", JSONObject().put("row", row))
+            busy = false
+            if (r != null && !r.ok && r.error == "no_email") message = "Add the client's email address first."
+            else moneyDone(r, "Emailed to the client", "Couldn't send it.")
+        }
+    }
+
+    fun payInvoice(row: Int, amount: Double, date: String, method: String) {
+        viewModelScope.launch {
+            busy = true
+            val r = act("admin_inv_pay", JSONObject().put("row", row).put("amount", amount).put("date", date).put("method", method))
+            busy = false
+            moneyDone(r, "Payment recorded", "Couldn't record that payment.")
+        }
+    }
+
+    fun removePayment(row: Int, index: Int) {
+        viewModelScope.launch {
+            val r = act("admin_inv_unpay", JSONObject().put("row", row).put("index", index))
+            moneyDone(r, "Payment removed", "Couldn't remove it.")
+        }
+    }
+
+    fun invoiceStatus(row: Int, status: String) {
+        viewModelScope.launch {
+            val r = act("admin_inv_status", JSONObject().put("row", row).put("status", status))
+            moneyDone(r, "Marked " + status.lowercase(), "Couldn't update it.")
+        }
+    }
+
+    fun convertEstimate(row: Int) {
+        viewModelScope.launch {
+            busy = true
+            val r = act("admin_inv_convert", JSONObject().put("row", row))
+            busy = false
+            moneyDone(r, "Invoice #" + (r?.json?.optInt("number") ?: 0) + " created", "Couldn't convert it.")
+        }
+    }
+
+    fun deleteInvoice(row: Int) {
+        viewModelScope.launch {
+            val r = act("admin_inv_delete", JSONObject().put("row", row))
+            moneyDone(r, "Deleted", "Only drafts and voided invoices can be deleted.")
+        }
+    }
+
+    fun addFee(name: String, price: Double) {
+        viewModelScope.launch {
+            val r = act("admin_fee_add", JSONObject().put("name", name).put("price", price))
+            moneyDone(r, "Fee added", "Couldn't add that fee.")
+        }
+    }
+
+    fun removeFee(row: Int) {
+        viewModelScope.launch {
+            val r = act("admin_fee_remove", JSONObject().put("row", row))
+            moneyDone(r, "Fee removed", "Couldn't remove it.")
+        }
+    }
+
+    /** Downloads the PDF and hands the file to the screen so it can be opened or shared. */
+    fun fetchPdf(row: Int, onFile: (java.io.File) -> Unit) {
+        viewModelScope.launch {
+            busy = true
+            val r = act("admin_inv_pdf", JSONObject().put("row", row))
+            busy = false
+            if (r != null && r.ok) {
+                try {
+                    val bytes = android.util.Base64.decode(r.json.optString("pdf"), android.util.Base64.DEFAULT)
+                    val dir = java.io.File(app.cacheDir, "pdfs").also { it.mkdirs() }
+                    val f = java.io.File(dir, r.json.optString("name", "document.pdf").replace(Regex("[^A-Za-z0-9 ._-]"), "_"))
+                    f.writeBytes(bytes)
+                    onFile(f)
+                } catch (e: Exception) { message = "Couldn't open the PDF." }
+            } else if (r != null) message = "Couldn't create the PDF."
         }
     }
 }

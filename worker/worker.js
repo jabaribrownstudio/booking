@@ -14,7 +14,11 @@ const RANK = { Staff: 1, Manager: 2, Owner: 3 };
 // The lowest role allowed to run each Apps Script action. Anything not listed is refused.
 const ACTION_MIN = {
   admin_list: "Staff", admin_status: "Staff", admin_add: "Staff",
-  admin_hours: "Manager", admin_off_add: "Manager", admin_off_remove: "Manager", admin_settings: "Manager"
+  admin_hours: "Manager", admin_off_add: "Manager", admin_off_remove: "Manager", admin_settings: "Manager",
+  // invoices, estimates and money
+  admin_money: "Manager", admin_inv_save: "Manager", admin_inv_send: "Manager", admin_inv_pay: "Manager", admin_inv_unpay: "Manager",
+  admin_inv_status: "Manager", admin_inv_convert: "Manager", admin_inv_pdf: "Manager", admin_inv_delete: "Manager",
+  admin_fee_add: "Manager", admin_fee_remove: "Manager"
 };
 
 const enc = new TextEncoder();

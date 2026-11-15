@@ -44,4 +44,14 @@ object Fmt {
         val n = price.replace(",", "").toDoubleOrNull() ?: return price
         return AppConfig.CURRENCY + String.format(Locale.US, "%,.0f", n)
     }
+
+    fun cash(n: Double): String {
+        val neg = n < 0
+        val s = String.format(Locale.US, "%,.2f", Math.abs(n))
+        return (if (neg) "-" else "") + AppConfig.CURRENCY + s
+    }
+
+    fun cashShort(n: Double): String = AppConfig.CURRENCY + String.format(Locale.US, "%,.0f", n)
+
+    fun date(s: String): String = try { LocalDate.parse(s).format(DateTimeFormatter.ofPattern("MMM d, yyyy", Locale.US)) } catch (e: Exception) { s }
 }

@@ -32,6 +32,22 @@ var CONFIG = {
   CLIENT_REMINDER_EMAIL: true,      // email the client the day before a Confirmed session
   CLIENT_REMINDER_HOUR: 8,          // hour of day (0-23, script time zone) the reminders go out
 
+  // ---- Invoices and estimates ----
+  AUTO_INVOICE_ON_CONFIRM: true,    // create (and email) an invoice when a booking is confirmed
+  INVOICE_START_NUMBER: 41,         // your next invoice number (your last one was 40)
+  ESTIMATE_START_NUMBER: 1,
+  PAYMENT_DUE_DAYS: 0,              // days after the invoice date that payment is due (0 = same day)
+  ESTIMATE_VALID_DAYS: 30,
+  CURRENCY_SYMBOL: "J$",
+  CURRENCY_CODE: "JMD",
+  BUSINESS_LINES: ["Kingston", "Jamaica"],
+  BUSINESS_PHONE: "8768531254",
+  BUSINESS_EMAIL: "jabaribrownstudio@gmail.com",
+  LOGO_URL: "https://jabaribrownstudio.github.io/booking/images/logo.png",
+  INVOICE_TERMS: "Banking Information:\nJabari Brown\nBank: Nova Scotia\nAccount #: 000850945\nBranch: 90365 Liguanea Branch\nAccount type: Savings\nAccount currency: JMD",
+  ESTIMATE_NOTE: "This is an estimate, not a bill. The final amount may change if the work changes.",
+  INVOICE_FOOTER: "Thank you for your business, have a great day!",
+
   // ---- Starting values ----
   // Used only the first time setup() creates the Availability and Settings tabs.
   // After that, change your hours in the Sheet itself and ignore these.
@@ -432,13 +448,19 @@ function onStatusEdit(e) {
     var sh = e.range.getSheet();
     if (sh.getName() !== CONFIG.SHEET_NAME || e.range.getColumn() !== COL.STATUS || e.range.getRow() < 2) return;
     var now = String(e.range.getValue());
-    if (String(e.oldValue || "") !== now) sendStatusEmail_(sh, e.range.getRow());
+    if (String(e.oldValue || "") !== now) {
+      var inv = null;
+      if (now === "Confirmed" && CONFIG.AUTO_INVOICE_ON_CONFIRM) {
+        try { inv = createInvoiceForBooking_(e.range.getRow(), []); } catch (ie) { console.error("invoice: " + ie); }
+      }
+      sendStatusEmail_(sh, e.range.getRow(), inv);
+    }
     syncCalendar_(sh, e.range.getRow());
   } catch (err) { console.error("onStatusEdit: " + err); }
 }
 
 /** Emails the client when a booking is Confirmed or Cancelled. */
-function sendStatusEmail_(sh, row) {
+function sendStatusEmail_(sh, row, inv) {
   try {
     if (!CONFIG.SEND_STATUS_EMAIL) return;
     var v = sh.getRange(row, 1, 1, HEADERS.length).getValues()[0];
@@ -451,11 +473,18 @@ function sendStatusEmail_(sh, row) {
         (v[12] ? "\nLocation: " + v[12] : "") + "\n\nReply to this email if anything needs to change.\n\nSee you then!\n– " + CONFIG.BUSINESS_NAME
       : "Hi " + first + ",\n\nYour booking for " + v[COL.PACKAGE - 1] + " on " + when +
         " has been cancelled.\n\nIf you'd like to rebook or have any questions, just reply to this email.\n\n– " + CONFIG.BUSINESS_NAME;
-    MailApp.sendEmail({
+    var mail = {
       to: email, replyTo: CONFIG.OWNER_EMAIL, name: CONFIG.BUSINESS_NAME,
       subject: (status === "Confirmed" ? "Your session is confirmed – " : "Your booking was cancelled – ") + CONFIG.BUSINESS_NAME,
       body: body
-    });
+    };
+    if (inv && status === "Confirmed") {
+      mail.body = body.replace("\n\nReply to this email", "\n\nYour invoice (#" + inv.number + ") is attached.\nTotal: " + money_(inv.total) +
+        "\nAmount due: " + money_(Math.max(0, inv.total - inv.paid)) + "\nPayment due: " + fmtDate_(inv.due) + "\n\nReply to this email");
+      mail.attachments = [invoicePdf_(inv)];
+    }
+    MailApp.sendEmail(mail);
+    if (inv && status === "Confirmed") markSent_(inv);
   } catch (err) { console.error("sendStatusEmail_: " + err); }
 }
 
@@ -541,7 +570,7 @@ function adminApi_(d) {
     Utilities.sleep(1500); // slows down anyone guessing a key
     return { ok: false, error: "unauthorized" };
   }
-  if ((OWNER_ONLY[d.action] && me.role !== "Owner") || (MANAGER_UP[d.action] && me.role === "Staff")) return { ok: false, error: "forbidden" };
+  if ((OWNER_ONLY[d.action] && me.role !== "Owner") || ((MANAGER_UP[d.action] || MONEY_ACTIONS[d.action]) && me.role === "Staff")) return { ok: false, error: "forbidden" };
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   switch (d.action) {
     case "admin_list": { var lst = adminList_(); lst.me = me; return lst; }
@@ -552,7 +581,13 @@ function adminApi_(d) {
       var before = String(sh.getRange(row, COL.STATUS).getValue());
       sh.getRange(row, COL.STATUS).setValue(d.status);
       sh.getRange(row, COL.HANDLED).setValue(me.name);
-      if (before !== d.status && d.notifyClient !== false) sendStatusEmail_(sh, row);
+      if (before !== d.status) {
+        var invOpt = d.invoice || null, inv = null;
+        if (d.status === "Confirmed" && (invOpt || CONFIG.AUTO_INVOICE_ON_CONFIRM)) {
+          try { inv = createInvoiceForBooking_(row, invOpt ? invOpt.extras : []); } catch (ie) { console.error("invoice: " + ie); }
+        }
+        if (d.notifyClient !== false) sendStatusEmail_(sh, row, inv && !(invOpt && invOpt.send === false) ? inv : null);
+      }
       syncCalendar_(sh, row);
       return { ok: true };
     }
@@ -644,6 +679,428 @@ function adminApi_(d) {
         if (!found) { found = st.getLastRow() + 1; st.getRange(found, 1).setValue(SETTING_LABELS[k]); }
         st.getRange(found, 2).setValue(n);
       });
+      return { ok: true };
+    }
+  }
+  if (MONEY_ACTIONS[d.action]) return moneyApi_(d);
+  return { ok: false, error: "unknown_action" };
+}
+
+/* ---------- invoices, estimates and money tracking ---------- */
+
+var TAB_INV = "Invoices", TAB_FEES = "Fees";
+var INV_HEADERS = ["Number", "Type", "Status", "Date", "Due / valid until", "Client", "Email", "Phone", "Booking row",
+                   "Items (JSON)", "Total", "Paid", "Payments (JSON)", "Notes", "Created", "Sent", "From estimate"];
+
+// What each package says on its invoice line. Keep in step with js/config.js.
+var PACKAGE_DETAILS = {
+  "bronze": { title: "BRONZE Package", lines: ["Duration: 30 minutes", "10 Retouched Images", "1 Outfit", "1 Location (within the corporate area)"] },
+  "silver": { title: "SILVER Package", lines: ["Duration: 1 hour", "15 Retouched Images", "2 Outfits", "1 Location (within the corporate area)"] },
+  "gold": { title: "GOLD Package", lines: ["Duration: 2 hours", "25 Retouched Images", "2 Outfits", "2 Locations (within the corporate area)"] },
+  "professional headshot": { title: "Professional Headshot", lines: ["Duration: 20 minutes", "5 Retouched Images", "1 Outfit", "1 Studio Setup"] }
+};
+
+var MONEY_ACTIONS = { admin_money: 1, admin_inv_save: 1, admin_inv_send: 1, admin_inv_pay: 1, admin_inv_unpay: 1, admin_inv_status: 1,
+                      admin_inv_convert: 1, admin_inv_pdf: 1, admin_inv_delete: 1, admin_fee_add: 1, admin_fee_remove: 1 };
+
+function safeJson_(v, fallback) { try { var x = JSON.parse(String(v)); return x == null ? fallback : x; } catch (e) { return fallback; } }
+function tz_() { return Session.getScriptTimeZone(); }
+function todayStr_() { return Utilities.formatDate(new Date(), tz_(), "yyyy-MM-dd"); }
+function addDays_(ymd, n) {
+  var p = ymd.split("-"), d = new Date(Date.UTC(+p[0], +p[1] - 1, +p[2] + (n || 0)));
+  return d.getUTCFullYear() + "-" + pad_(d.getUTCMonth() + 1) + "-" + pad_(d.getUTCDate());
+}
+function fmtDate_(ymd) {
+  var p = String(ymd).split("-");
+  if (p.length !== 3) return String(ymd);
+  return Utilities.formatDate(new Date(+p[0], +p[1] - 1, +p[2]), tz_(), "MMMM d, yyyy");
+}
+function dateStr_(v) { return Object.prototype.toString.call(v) === "[object Date]" ? Utilities.formatDate(v, tz_(), "yyyy-MM-dd") : String(v || ""); }
+function isYmd_(s) { return /^\d{4}-\d{2}-\d{2}$/.test(String(s || "")); }
+function validEmail_(e) { return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(e || "")); }
+function money_(n) {
+  n = Math.round((+n || 0) * 100) / 100;
+  var s = Math.abs(n).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  return (n < 0 ? "-" : "") + CONFIG.CURRENCY_SYMBOL + s;
+}
+function esc_(s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
+function cleanText_(v, max) { return String(v == null ? "" : v).replace(/\r/g, "").trim().slice(0, max || 300); }
+
+function invSheet_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet(), sh = ss.getSheetByName(TAB_INV);
+  if (sh) return sh;
+  sh = ss.insertSheet(TAB_INV);
+  sh.getRange(1, 1, 1, INV_HEADERS.length).setValues([INV_HEADERS]).setFontWeight("bold");
+  sh.setFrozenRows(1);
+  sh.getRange(2, 4, 3000, 2).setNumberFormat("@");
+  sh.setColumnWidth(6, 180); sh.setColumnWidth(10, 260);
+  return sh;
+}
+
+function feesSheet_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet(), sh = ss.getSheetByName(TAB_FEES);
+  if (sh) return sh;
+  sh = ss.insertSheet(TAB_FEES);
+  sh.getRange(1, 1, 1, 3).setValues([["Item", "Description (optional)", "Price"]]).setFontWeight("bold");
+  sh.getRange(2, 1, 1, 3).setValues([["Permit fee", "", 0]]);
+  sh.setFrozenRows(1);
+  sh.setColumnWidth(1, 220); sh.setColumnWidth(2, 320);
+  return sh;
+}
+
+function invFromRow_(r, row) {
+  var items = safeJson_(r[9], []), pays = safeJson_(r[12], []);
+  return { row: row, number: +r[0] || 0, type: String(r[1]), status: String(r[2]), date: dateStr_(r[3]), due: dateStr_(r[4]),
+    client: String(r[5]), email: String(r[6] || ""), phone: String(r[7] || ""), bookingRow: +r[8] || 0, items: items,
+    total: +r[10] || 0, paid: +r[11] || 0, payments: pays, notes: String(r[13] || ""), created: String(r[14] || ""),
+    sent: String(r[15] || ""), from: +r[16] || 0 };
+}
+
+function readInv_() {
+  var sh = invSheet_(), last = sh.getLastRow();
+  if (last < 2) return [];
+  var out = [];
+  sh.getRange(2, 1, last - 1, INV_HEADERS.length).getValues().forEach(function (r, i) {
+    if (!r[0] && !r[5]) return;
+    out.push(invFromRow_(r, i + 2));
+  });
+  return out;
+}
+
+function getInv_(row) {
+  var sh = invSheet_();
+  row = parseInt(row, 10);
+  if (!(row >= 2 && row <= sh.getLastRow())) return null;
+  var r = sh.getRange(row, 1, 1, INV_HEADERS.length).getValues()[0];
+  return r[0] || r[5] ? invFromRow_(r, row) : null;
+}
+
+function writeInv_(inv) {
+  var sh = invSheet_();
+  var r = inv.row || Math.max(sh.getLastRow() + 1, 2);
+  sh.getRange(r, 4, 1, 2).setNumberFormat("@");
+  sh.getRange(r, 1, 1, INV_HEADERS.length).setValues([[inv.number, inv.type, inv.status, inv.date, inv.due, inv.client, inv.email, inv.phone,
+    inv.bookingRow || "", JSON.stringify(inv.items), inv.total, inv.paid, JSON.stringify(inv.payments), inv.notes, inv.created, inv.sent, inv.from || ""]]);
+  inv.row = r;
+  return inv;
+}
+
+function nextNumber_(type) {
+  var max = (type === "Estimate" ? CONFIG.ESTIMATE_START_NUMBER : CONFIG.INVOICE_START_NUMBER) - 1;
+  readInv_().forEach(function (i) { if (i.type === type && i.number > max) max = i.number; });
+  return max + 1;
+}
+
+function cleanItems_(arr) {
+  var out = [];
+  (arr || []).slice(0, 40).forEach(function (x) {
+    var name = cleanText_(x && x.name, 100);
+    if (!name) return;
+    var qty = +x.qty; if (!(qty > 0)) qty = 1;
+    var price = +x.price; if (isNaN(price)) price = 0;
+    out.push({ name: name, desc: cleanText_(x.desc, 500), qty: Math.min(qty, 1000), price: Math.max(-1e8, Math.min(price, 1e8)) });
+  });
+  return out;
+}
+
+function calcTotal_(items) {
+  var t = 0;
+  items.forEach(function (i) { t += Math.round(i.qty * i.price * 100) / 100; });
+  return Math.round(t * 100) / 100;
+}
+
+/** The first invoice line for a booking: the package, priced from the booking. */
+function bookingItem_(v) {
+  var pkg = String(v[COL.PACKAGE - 1] || ""), det = PACKAGE_DETAILS[pkg.toLowerCase()];
+  var price = parseFloat(String(v[7] || "").replace(/[^0-9.]/g, "")) || 0;
+  var dur = v[11] ? "Duration: " + v[11] + " minutes" : "";
+  return { name: det ? det.title : (pkg || "Photography session"), desc: det ? det.lines.join("\n") : dur, qty: 1, price: price };
+}
+
+function invoiceForBooking_(row) {
+  var found = null;
+  readInv_().forEach(function (i) { if (!found && i.type === "Invoice" && i.bookingRow === row && i.status !== "Void") found = i; });
+  return found;
+}
+
+function createInvoiceForBooking_(row, extras) {
+  var existing = invoiceForBooking_(row);
+  if (existing) return existing;
+  var v = getSheet_().getRange(row, 1, 1, HEADERS.length).getValues()[0];
+  var date = todayStr_(), items = [bookingItem_(v)].concat(cleanItems_(extras));
+  return writeInv_({ row: 0, number: nextNumber_("Invoice"), type: "Invoice", status: "Draft", date: date,
+    due: addDays_(date, CONFIG.PAYMENT_DUE_DAYS), client: String(v[COL.NAME - 1]), email: String(v[COL.EMAIL - 1] || ""),
+    phone: String(v[4] || ""), bookingRow: row, items: items, total: calcTotal_(items), paid: 0, payments: [], notes: "",
+    created: new Date().toISOString(), sent: "", from: 0 });
+}
+
+function setPaidStatus_(inv) {
+  if (inv.type !== "Invoice" || inv.status === "Void") return;
+  var paid = 0;
+  inv.payments.forEach(function (p) { paid += +p.amount || 0; });
+  inv.paid = Math.round(paid * 100) / 100;
+  if (inv.total > 0 && inv.paid >= inv.total - 0.005) inv.status = "Paid";
+  else if (inv.paid > 0) inv.status = "Partial";
+  else if (inv.status === "Paid" || inv.status === "Partial") inv.status = inv.sent ? "Sent" : "Draft";
+}
+
+function markSent_(inv) {
+  inv.sent = new Date().toISOString();
+  if (inv.status === "Draft") inv.status = "Sent";
+  writeInv_(inv);
+}
+
+/* ---- the document ---- */
+
+function logoTag_() {
+  try {
+    var cache = CacheService.getScriptCache(), b64 = cache.get("logo64");
+    if (!b64) {
+      var r = UrlFetchApp.fetch(CONFIG.LOGO_URL, { muteHttpExceptions: true });
+      if (r.getResponseCode() !== 200) return "";
+      b64 = Utilities.base64Encode(r.getContent());
+      if (b64.length < 90000) cache.put("logo64", b64, 21600);
+    }
+    return '<img src="data:image/png;base64,' + b64 + '" height="86" style="height:86px;">';
+  } catch (e) { return ""; }
+}
+
+function invoiceHtml_(inv) {
+  var isInv = inv.type === "Invoice", C = "#444444";
+  var due = Math.max(0, Math.round((inv.total - inv.paid) * 100) / 100);
+  var logo = logoTag_() || '<span style="font-size:20px;font-weight:bold;">' + esc_(CONFIG.BUSINESS_NAME) + '</span>';
+  var h = '<html><body style="font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#222222;margin:0;padding:0;">';
+
+  h += '<table width="100%" cellpadding="0" cellspacing="0"><tr>' +
+    '<td valign="top" width="50%">' + logo + '</td>' +
+    '<td valign="top" align="right"><div style="font-size:34px;letter-spacing:1px;color:#111111;">' + (isInv ? "INVOICE" : "ESTIMATE") + '</div>' +
+    '<div style="margin-top:14px;line-height:1.5;"><b>' + esc_(CONFIG.BUSINESS_NAME) + '</b><br>' +
+    CONFIG.BUSINESS_LINES.map(esc_).join("<br>") + '<br><br>' + esc_(CONFIG.BUSINESS_PHONE) + '<br>' + esc_(CONFIG.BUSINESS_EMAIL) + '</div></td></tr></table>';
+
+  h += '<div style="border-top:1px solid #dddddd;margin:14px 0 12px 0;"></div>';
+
+  var meta = function (k, v, shade) {
+    return '<tr><td align="right" style="padding:3px 8px;' + (shade ? 'background-color:#f1f3f4;' : '') + '"><b>' + k + '</b></td>' +
+      '<td align="left" style="padding:3px 8px;' + (shade ? 'background-color:#f1f3f4;font-weight:bold;' : '') + '">' + v + '</td></tr>';
+  };
+  h += '<table width="100%" cellpadding="0" cellspacing="0"><tr><td valign="top" width="50%"><span style="color:#888888;">BILL TO</span><br>' +
+    '<b>' + esc_(inv.client) + '</b>' + (inv.email ? '<br><span style="color:#555555;">' + esc_(inv.email) + '</span>' : '') + '</td>' +
+    '<td valign="top" align="right"><table cellpadding="0" cellspacing="0" align="right">' +
+    meta((isInv ? "Invoice" : "Estimate") + " Number:", inv.number) +
+    meta((isInv ? "Invoice" : "Estimate") + " Date:", fmtDate_(inv.date)) +
+    meta(isInv ? "Payment Due:" : "Valid Until:", fmtDate_(inv.due)) +
+    meta((isInv ? "Amount Due" : "Total") + " (" + CONFIG.CURRENCY_CODE + "):", money_(isInv ? due : inv.total), true) +
+    '</table></td></tr></table>';
+
+  h += '<table width="100%" cellpadding="0" cellspacing="0" style="margin-top:18px;border-collapse:collapse;">' +
+    '<tr>' +
+    '<td bgcolor="' + C + '" style="background-color:' + C + ';padding:9px 10px;color:#ffffff;font-weight:bold;">Items</td>' +
+    '<td bgcolor="' + C + '" align="center" style="background-color:' + C + ';padding:9px 10px;color:#ffffff;font-weight:bold;">Quantity</td>' +
+    '<td bgcolor="' + C + '" align="right" style="background-color:' + C + ';padding:9px 10px;color:#ffffff;font-weight:bold;">Price</td>' +
+    '<td bgcolor="' + C + '" align="right" style="background-color:' + C + ';padding:9px 10px;color:#ffffff;font-weight:bold;">Amount</td></tr>';
+  inv.items.forEach(function (it) {
+    var lines = String(it.desc || "").split("\n").filter(function (l) { return l.trim(); })
+      .map(function (l) { return "<br>- " + esc_(l.replace(/^-\s*/, "")); }).join("");
+    h += '<tr><td valign="top" style="padding:10px;border-bottom:2px solid #e4e4e4;"><b>' + esc_(it.name) + '</b>' + lines + '</td>' +
+      '<td valign="top" align="center" style="padding:10px;border-bottom:2px solid #e4e4e4;">' + (+it.qty) + '</td>' +
+      '<td valign="top" align="right" style="padding:10px;border-bottom:2px solid #e4e4e4;">' + money_(it.price) + '</td>' +
+      '<td valign="top" align="right" style="padding:10px;border-bottom:2px solid #e4e4e4;">' + money_(Math.round(it.qty * it.price * 100) / 100) + '</td></tr>';
+  });
+  h += '</table>';
+
+  var tr = function (k, v, bold) {
+    return '<tr><td align="right" style="padding:6px 10px;' + (bold ? 'font-weight:bold;' : '') + '">' + k + '</td>' +
+      '<td align="right" width="120" style="padding:6px 10px;' + (bold ? 'font-weight:bold;' : '') + '">' + v + '</td></tr>';
+  };
+  h += '<table width="62%" align="right" cellpadding="0" cellspacing="0" style="margin-top:16px;">' + tr("<b>Total:</b>", money_(inv.total));
+  if (isInv) {
+    inv.payments.forEach(function (p) {
+      h += tr("Payment on " + fmtDate_(p.date) + (p.method ? " using a " + esc_(p.method) : "") + ":", money_(p.amount));
+    });
+    h += '<tr><td colspan="2" style="border-top:2px solid #e4e4e4;font-size:2px;">&nbsp;</td></tr>' + tr("Amount Due (" + CONFIG.CURRENCY_CODE + "):", money_(due), true);
+  }
+  h += '</table><div style="clear:both;"></div>';
+
+  var terms = [];
+  if (inv.notes) terms.push(inv.notes);
+  if (CONFIG.INVOICE_TERMS) terms.push(CONFIG.INVOICE_TERMS);
+  if (!isInv && CONFIG.ESTIMATE_NOTE) terms.push(CONFIG.ESTIMATE_NOTE);
+  if (terms.length) {
+    h += '<div style="margin-top:46px;color:#666666;line-height:1.7;"><b style="color:#555555;">Notes / Terms</b><br>' +
+      terms.map(function (t) { return esc_(t).replace(/\n/g, "<br>"); }).join("<br><br>") + '</div>';
+  }
+  h += '<div style="margin-top:50px;text-align:center;color:#888888;">' + esc_(CONFIG.INVOICE_FOOTER) + '</div></body></html>';
+  return h;
+}
+
+function invoicePdf_(inv) {
+  var label = (inv.type === "Invoice" ? "Invoice " : "Estimate ") + inv.number + " - " + inv.client.replace(/[^\w .-]/g, "");
+  return Utilities.newBlob(invoiceHtml_(inv), "text/html", label + ".html").getAs("application/pdf").setName(label + ".pdf");
+}
+
+/** Emails the document to the client as a PDF. Returns true if it was sent. */
+function emailInvoice_(inv) {
+  if (!validEmail_(inv.email)) return false;
+  var isInv = inv.type === "Invoice", first = inv.client.split(" ")[0], due = Math.max(0, inv.total - inv.paid);
+  var body = "Hi " + first + ",\n\n" +
+    (isInv ? "Your invoice (#" + inv.number + ") is attached.\n\nTotal: " + money_(inv.total) + "\nAmount due: " + money_(due) + "\nPayment due: " + fmtDate_(inv.due)
+           : "Your estimate (#" + inv.number + ") is attached.\n\nEstimated total: " + money_(inv.total) + "\nValid until: " + fmtDate_(inv.due)) +
+    "\n\nReply to this email if you have any questions.\n\n– " + CONFIG.BUSINESS_NAME;
+  MailApp.sendEmail({ to: inv.email, replyTo: CONFIG.OWNER_EMAIL, name: CONFIG.BUSINESS_NAME,
+    subject: (isInv ? "Invoice #" : "Estimate #") + inv.number + " from " + CONFIG.BUSINESS_NAME, body: body, attachments: [invoicePdf_(inv)] });
+  markSent_(inv);
+  return true;
+}
+
+/** Run once from the editor: builds a sample invoice and emails the PDF to OWNER_EMAIL, so you can check how it looks. */
+function testInvoice() {
+  var item = bookingItem_(["", "", "", "", "", "", "Silver", "J$22,000", "", "", "", 60]);
+  var inv = { row: 0, number: 0, type: "Invoice", status: "Sent", date: todayStr_(), due: todayStr_(), client: "Sample Client", email: CONFIG.OWNER_EMAIL,
+    items: [item, { name: "Permit fee", desc: "", qty: 1, price: 5000 }], total: 27000, paid: 10000, payments: [{ date: todayStr_(), amount: 10000, method: "bank payment" }], notes: "" };
+  MailApp.sendEmail({ to: CONFIG.OWNER_EMAIL, subject: "Sample invoice from your booking app", body: "Here is a sample invoice.", attachments: [invoicePdf_(inv)] });
+}
+
+/* ---- money summary ---- */
+
+function finance_(year) {
+  var all = readInv_(), months = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], collected = 0, invoiced = 0, outstanding = 0, overdue = 0, estOpen = 0, estCount = 0, years = {};
+  var today = todayStr_();
+  years[+today.slice(0, 4)] = 1;
+  all.forEach(function (i) {
+    if (i.type === "Invoice") {
+      if (i.status === "Void") return;
+      i.payments.forEach(function (p) {
+        var y = +String(p.date).slice(0, 4); years[y] = 1;
+        if (y === year) { months[+String(p.date).slice(5, 7) - 1] += +p.amount || 0; collected += +p.amount || 0; }
+      });
+      var iy = +String(i.date).slice(0, 4); years[iy] = 1;
+      if (iy === year && i.status !== "Draft") invoiced += i.total;
+      if (i.status === "Sent" || i.status === "Partial") {
+        var owe = i.total - i.paid; outstanding += owe;
+        if (i.due && i.due < today) overdue += owe;
+      }
+    } else if (i.status === "Draft" || i.status === "Sent") { estCount++; estOpen += i.total; }
+  });
+  var r2 = function (n) { return Math.round(n * 100) / 100; };
+  return { year: year, collected: r2(collected), invoiced: r2(invoiced), outstanding: r2(outstanding), overdue: r2(overdue),
+    estimatesOpen: estCount, estimatesValue: r2(estOpen), months: months.map(r2),
+    years: Object.keys(years).map(Number).sort(function (a, b) { return b - a; }) };
+}
+
+function feesList_() {
+  return rows_(TAB_FEES, 3).map(function (r, i) { return { row: i + 2, name: String(r.d[0]), desc: String(r.d[1]), price: +r.v[2] || 0 }; })
+    .filter(function (f) { return f.name; });
+}
+
+function moneyApi_(d) {
+  switch (d.action) {
+    case "admin_money": {
+      var year = parseInt(d.year, 10) || +todayStr_().slice(0, 4);
+      var all = readInv_().sort(function (a, b) { return a.date < b.date ? 1 : a.date > b.date ? -1 : b.number - a.number; });
+      return { ok: true, invoices: all, fees: feesList_(), finance: finance_(year), currency: CONFIG.CURRENCY_SYMBOL };
+    }
+
+    case "admin_inv_save": {
+      var type = d.type === "Estimate" ? "Estimate" : "Invoice";
+      var items = cleanItems_(d.items), client = cleanText_(d.client, 100), email = clean_(d.email, 150);
+      if (!items.length || !client || (email && !validEmail_(email))) return { ok: false, error: "invalid_input" };
+      var inv;
+      if (d.row) {
+        inv = getInv_(d.row);
+        if (!inv) return { ok: false, error: "invalid_input" };
+        if (inv.type === "Invoice" && (inv.status === "Paid" || inv.status === "Void")) return { ok: false, error: "locked" };
+      } else {
+        inv = { row: 0, number: nextNumber_(type), type: type, status: "Draft", date: todayStr_(), due: "", client: "", email: "", phone: "", bookingRow: 0,
+          items: [], total: 0, paid: 0, payments: [], notes: "", created: new Date().toISOString(), sent: "", from: 0 };
+      }
+      inv.client = client; inv.email = email; inv.phone = clean_(d.phone, 40);
+      inv.bookingRow = parseInt(d.bookingRow, 10) || inv.bookingRow || 0;
+      inv.items = items; inv.total = calcTotal_(items); inv.notes = cleanText_(d.notes, 1000);
+      if (isYmd_(d.date)) inv.date = d.date;
+      inv.due = isYmd_(d.due) ? d.due : addDays_(inv.date, type === "Estimate" ? CONFIG.ESTIMATE_VALID_DAYS : CONFIG.PAYMENT_DUE_DAYS);
+      setPaidStatus_(inv);
+      writeInv_(inv);
+      var sent = false;
+      if (d.send) {
+        if (!validEmail_(inv.email)) return { ok: false, error: "no_email", row: inv.row, number: inv.number };
+        sent = emailInvoice_(inv);
+      }
+      return { ok: true, row: inv.row, number: inv.number, sent: sent };
+    }
+
+    case "admin_inv_send": {
+      var s = getInv_(d.row);
+      if (!s || s.status === "Void") return { ok: false, error: "invalid_input" };
+      if (!validEmail_(s.email)) return { ok: false, error: "no_email" };
+      emailInvoice_(s);
+      return { ok: true };
+    }
+
+    case "admin_inv_pay": {
+      var p = getInv_(d.row), amt = Math.round((+d.amount) * 100) / 100;
+      if (!p || p.type !== "Invoice" || p.status === "Void" || !(amt > 0) || amt > 1e8) return { ok: false, error: "invalid_input" };
+      p.payments.push({ date: isYmd_(d.date) ? d.date : todayStr_(), amount: amt, method: cleanText_(d.method, 40) || "bank payment" });
+      setPaidStatus_(p);
+      writeInv_(p);
+      return { ok: true };
+    }
+
+    case "admin_inv_unpay": {
+      var u = getInv_(d.row), idx = parseInt(d.index, 10);
+      if (!u || u.type !== "Invoice" || !(idx >= 0 && idx < u.payments.length)) return { ok: false, error: "invalid_input" };
+      u.payments.splice(idx, 1);
+      setPaidStatus_(u);
+      writeInv_(u);
+      return { ok: true };
+    }
+
+    case "admin_inv_status": {
+      var t = getInv_(d.row);
+      var allowed = t && (t.type === "Invoice" ? ["Draft", "Sent", "Void"] : ["Draft", "Sent", "Accepted", "Declined"]);
+      if (!t || allowed.indexOf(d.status) < 0) return { ok: false, error: "invalid_input" };
+      t.status = d.status;
+      if (t.type === "Invoice" && d.status !== "Void") setPaidStatus_(t);
+      writeInv_(t);
+      return { ok: true };
+    }
+
+    case "admin_inv_convert": {
+      var e = getInv_(d.row);
+      if (!e || e.type !== "Estimate") return { ok: false, error: "invalid_input" };
+      var today = todayStr_();
+      var ni = writeInv_({ row: 0, number: nextNumber_("Invoice"), type: "Invoice", status: "Draft", date: today, due: addDays_(today, CONFIG.PAYMENT_DUE_DAYS),
+        client: e.client, email: e.email, phone: e.phone, bookingRow: e.bookingRow, items: e.items, total: e.total, paid: 0, payments: [], notes: e.notes,
+        created: new Date().toISOString(), sent: "", from: e.number });
+      e.status = "Accepted"; writeInv_(e);
+      return { ok: true, row: ni.row, number: ni.number };
+    }
+
+    case "admin_inv_pdf": {
+      var g = getInv_(d.row);
+      if (!g) return { ok: false, error: "invalid_input" };
+      var blob = invoicePdf_(g);
+      return { ok: true, name: blob.getName(), pdf: Utilities.base64Encode(blob.getBytes()) };
+    }
+
+    case "admin_inv_delete": {
+      var x = getInv_(d.row);
+      if (!x || (x.type === "Invoice" && x.status !== "Draft" && x.status !== "Void")) return { ok: false, error: "invalid_input" };
+      invSheet_().deleteRow(x.row);
+      return { ok: true };
+    }
+
+    case "admin_fee_add": {
+      var name = cleanText_(d.name, 100), price = +d.price;
+      if (!name || isNaN(price) || price < 0 || price > 1e8) return { ok: false, error: "invalid_input" };
+      var fs = feesSheet_(), r = Math.max(fs.getLastRow() + 1, 2);
+      fs.getRange(r, 1, 1, 3).setValues([[clean_(name, 100), clean_(d.desc, 200), price]]);
+      return { ok: true };
+    }
+
+    case "admin_fee_remove": {
+      var fs2 = feesSheet_(), fr = parseInt(d.row, 10);
+      if (!(fr >= 2 && fr <= fs2.getLastRow())) return { ok: false, error: "invalid_input" };
+      fs2.deleteRow(fr);
       return { ok: true };
     }
   }
