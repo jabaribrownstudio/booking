@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.dp
 fun AccountTab(vm: MainViewModel, pad: PaddingValues) {
     val me = vm.data?.me
     var changing by remember { mutableStateOf(false) }
+    var renaming by remember { mutableStateOf(false) }
     var showTeam by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().padding(pad).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Text("Account", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(top = 8.dp))
@@ -39,7 +40,7 @@ fun AccountTab(vm: MainViewModel, pad: PaddingValues) {
             Text(me?.name?.ifBlank { null } ?: vm.username.ifBlank { "Signed in" }, style = MaterialTheme.typography.titleLarge)
             Text(me?.role ?: "", color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(4.dp))
-            Text(if (vm.mode == "worker") "Signed in with a username" else "Signed in with the admin key", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(if (vm.mode == "worker") "Signed in as " + vm.usernameNow else "Signed in with the admin key. Sign out and sign in with your username.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Card2 {
             Text("Home-screen widget", style = MaterialTheme.typography.titleMedium)
@@ -57,11 +58,34 @@ fun AccountTab(vm: MainViewModel, pad: PaddingValues) {
             if (testMsg.isNotEmpty()) Text(testMsg, style = MaterialTheme.typography.bodyMedium)
         }
         if (me?.role == "Owner") androidx.compose.material3.Button(onClick = { showTeam = true }, modifier = Modifier.fillMaxWidth().height(50.dp)) { Text("Manage team") }
+        if (vm.mode == "worker") OutlinedButton(onClick = { renaming = true }, modifier = Modifier.fillMaxWidth().height(50.dp)) { Text("Change username") }
         if (vm.mode == "worker") OutlinedButton(onClick = { changing = true }, modifier = Modifier.fillMaxWidth().height(50.dp)) { Text("Change password") }
         OutlinedButton(onClick = { vm.signOut() }, modifier = Modifier.fillMaxWidth().height(50.dp)) { Text("Sign out") }
         if (me?.role != "Owner") Text("Only the owner can add or manage team members.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
     if (showTeam) TeamSheet(vm) { showTeam = false }
+    if (renaming) {
+        var nu by remember { mutableStateOf(vm.usernameNow) }
+        var err by remember { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { renaming = false },
+            title = { Text("Change username") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(nu, { nu = it.lowercase().filter { c -> c.isLetterOrDigit() || c in "._-" } }, label = { Text("New username") }, singleLine = true)
+                    Text("3–30 letters, numbers, dots, dashes or underscores. Your password stays the same.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (err.isNotEmpty()) Text(err, color = MaterialTheme.colorScheme.error)
+                }
+            },
+            confirmButton = {
+                TextButton(enabled = !vm.busy, onClick = {
+                    if (nu.length < 3) err = "Use at least 3 characters."
+                    else vm.changeUsername(nu) { e -> when (e) { null -> renaming = false; "exists" -> err = "That username is taken."; "invalid_input" -> err = "That username isn't allowed."; else -> err = "Couldn't change it. Try again." } }
+                }) { Text("Save") }
+            },
+            dismissButton = { TextButton(onClick = { renaming = false }) { Text("Cancel") } }
+        )
+    }
     if (changing) {
         var cur by remember { mutableStateOf("") }
         var new by remember { mutableStateOf("") }

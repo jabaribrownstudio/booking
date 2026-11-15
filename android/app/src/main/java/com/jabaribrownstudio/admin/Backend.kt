@@ -46,6 +46,14 @@ class Backend(private val store: Store) {
         return null
     }
 
+    /** Changes the signed-in person's username. Returns an error code ("exists", "invalid_input", "other") or null. */
+    suspend fun changeUsername(newName: String): String? {
+        val r = Net.worker(store.workerUrl, "/unset", JSONObject().put("u", store.username).put("hash", store.secret).put("username", newName))
+        if (!r.ok) return if (r.error == "exists" || r.error == "invalid_input") r.error else "other"
+        store.username = r.json.optString("username", newName.trim().lowercase())
+        return null
+    }
+
     /** Sets a new password (used when the owner has asked for a change). Returns an error code or null. */
     suspend fun changePassword(current: String, new: String): String? {
         val s = Net.worker(store.workerUrl, "/salt", JSONObject().put("u", store.username))

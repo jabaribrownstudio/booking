@@ -45,12 +45,8 @@ import androidx.compose.ui.unit.dp
 
 @Composable
 fun SignInScreen(vm: MainViewModel) {
-    var useKey by remember { mutableStateOf(vm.mode == "key") }
     var user by remember { mutableStateOf(vm.username) }
     var secret by remember { mutableStateOf("") }
-    var showConn by remember { mutableStateOf(false) }
-    var script by remember { mutableStateOf(vm.scriptUrl) }
-    var worker by remember { mutableStateOf(vm.workerUrl) }
 
     Column(
         modifier = Modifier.fillMaxSize().safeDrawingPadding().imePadding().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 16.dp),
@@ -68,20 +64,13 @@ fun SignInScreen(vm: MainViewModel) {
             style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 6.dp, bottom = 24.dp)
         )
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-            FilterChip(selected = !useKey, onClick = { useKey = false }, label = { Text("Username") })
-            FilterChip(selected = useKey, onClick = { useKey = true }, label = { Text("Admin key") })
-        }
-        Spacer(Modifier.height(12.dp))
-        if (!useKey) {
-            OutlinedTextField(
-                value = user, onValueChange = { user = it }, label = { Text("Username") }, singleLine = true,
-                modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email)
-            )
-            Spacer(Modifier.height(10.dp))
-        }
         OutlinedTextField(
-            value = secret, onValueChange = { secret = it }, label = { Text(if (useKey) "Admin key" else "Password") }, singleLine = true,
+            value = user, onValueChange = { user = it }, label = { Text("Username") }, singleLine = true,
+            modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email)
+        )
+        Spacer(Modifier.height(10.dp))
+        OutlinedTextField(
+            value = secret, onValueChange = { secret = it }, label = { Text("Password") }, singleLine = true,
             visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth(),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
         )
@@ -90,19 +79,11 @@ fun SignInScreen(vm: MainViewModel) {
         }
         Spacer(Modifier.height(18.dp))
         Button(
-            onClick = { vm.signIn(useKey, script, worker, user, secret) },
+            onClick = { vm.signIn(false, vm.scriptUrl, vm.workerUrl, user, secret) },
             enabled = !vm.busy, modifier = Modifier.fillMaxWidth().height(52.dp)
         ) {
             if (vm.busy) CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.5.dp, color = MaterialTheme.colorScheme.onPrimary)
             else Text("Sign in")
-        }
-        TextButton(onClick = { showConn = !showConn }, modifier = Modifier.padding(top = 8.dp)) { Text(if (showConn) "Hide connection" else "Connection") }
-        AnimatedVisibility(visible = showConn) {
-            Column {
-                OutlinedTextField(value = worker, onValueChange = { worker = it }, label = { Text("Cloudflare login address") }, modifier = Modifier.fillMaxWidth(), minLines = 2)
-                Spacer(Modifier.height(10.dp))
-                OutlinedTextField(value = script, onValueChange = { script = it }, label = { Text("Google Apps Script address") }, modifier = Modifier.fillMaxWidth(), minLines = 3)
-            }
         }
     }
 }

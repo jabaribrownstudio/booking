@@ -145,6 +145,16 @@ async function route(req, env) {
     return json({ ok: true });
   }
 
+  if (path === "/unset") {
+    const nu = String(b.username || "").trim().toLowerCase();
+    if (!/^[a-z0-9._-]{3,30}$/.test(nu)) return json({ ok: false, error: "invalid_input" }, 400);
+    const clash = findUser(users, nu);
+    if (clash && clash.id !== user.id) return json({ ok: false, error: "exists" }, 409);
+    user.username = nu;
+    await saveUsers(env, users);
+    return json({ ok: true, username: nu });
+  }
+
   if (user.mustChange) return json({ ok: false, error: "must_change" }, 403);
 
   if (path === "/team") return team(env, user, users, b);

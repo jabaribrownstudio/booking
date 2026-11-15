@@ -155,15 +155,27 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
             try {
                 val err = if (useKey) backend.signInKey(scriptUrl.trim(), secret) else backend.signInWorker(workerUrl.trim(), user, secret)
                 when (err) {
-                    null -> { signedIn = true; Sync.schedule(app); load() }
-                    "must_change" -> { signedIn = true; mustChange = true; Sync.schedule(app) }
+                    null -> { signedIn = true; usernameNow = store.username; Sync.schedule(app); load() }
+                    "must_change" -> { signedIn = true; usernameNow = store.username; mustChange = true; Sync.schedule(app) }
                     "locked" -> loginError = "Too many attempts. Wait a minute and try again."
                     "bad_login" -> loginError = if (useKey) "That admin key isn't right." else "That username or password isn't right."
                     else -> loginError = "Couldn't sign in. Check the connection settings."
                 }
-            } catch (e: NetworkError) { loginError = "Can't reach the server. Check your connection and the addresses under Connection." }
-            catch (e: Exception) { loginError = "Couldn't sign in. Check the addresses under Connection." }
+            } catch (e: NetworkError) { loginError = "Can't reach the server. Check your internet connection." }
+            catch (e: Exception) { loginError = "Couldn't sign in. Try again." }
             busy = false
+        }
+    }
+
+    var usernameNow by mutableStateOf(store.username)
+
+    fun changeUsername(newName: String, onDone: (String?) -> Unit) {
+        viewModelScope.launch {
+            busy = true
+            val err = try { backend.changeUsername(newName) } catch (e: Exception) { "other" }
+            busy = false
+            if (err == null) { usernameNow = store.username; message = "Username changed to " + store.username }
+            onDone(err)
         }
     }
 
