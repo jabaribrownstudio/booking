@@ -8,10 +8,10 @@ object AppConfig {
     const val WORKER_URL = "https://booking-auth.jabaribrownstudio.workers.dev"
     const val CURRENCY = "J$"
     /** Firebase (instant alerts). Leave blank until set up; the app then checks every 15 minutes instead. */
-    const val FIREBASE_API_KEY = ""
-    const val FIREBASE_APP_ID = ""
-    const val FIREBASE_PROJECT_ID = ""
-    const val FIREBASE_SENDER_ID = ""
+    const val FIREBASE_API_KEY = "AIzaSyBi1WfoRwatUkKFbgQoS1MVcHI-dbkdyG0"
+    const val FIREBASE_APP_ID = "1:358016827250:android:044d7e55ca72f79c9267eb"
+    const val FIREBASE_PROJECT_ID = "jb-studio-admin"
+    const val FIREBASE_SENDER_ID = "358016827250"
     const val INSTAGRAM = "jabaribrownstudio"
 
     data class Pkg(val name: String, val price: Int, val minutes: Int)
