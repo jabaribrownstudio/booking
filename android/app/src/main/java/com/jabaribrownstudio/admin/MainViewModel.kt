@@ -91,7 +91,12 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { BookingsWidget().updateAll(app) }
     }
 
-    fun signOut() = forceSignOut("")
+    fun signOut() {
+        viewModelScope.launch {
+            kotlinx.coroutines.withTimeoutOrNull(4000) { Push.unregister(app) } // stop alerts to this phone
+            forceSignOut("")
+        }
+    }
 
     /** Runs a backend action and deals with the common failures. Returns null if it failed (a message is already shown). */
     private suspend fun act(action: String, d: JSONObject = JSONObject()): ApiResult? = checked { backend.call(action, d) }
@@ -134,6 +139,7 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
                 lastLoad = System.currentTimeMillis()
                 if (!hoursDirty) hoursDraft = d.hours
                 try { BookingsWidget().updateAll(app) } catch (e: Exception) { }
+                Push.register(app)
                 if (d.me.isManager && money == null) loadMoney()
             } else if (r != null) message = "Couldn't load your data."
             loading = false

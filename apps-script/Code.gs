@@ -421,6 +421,7 @@ function createBooking_(d, admin, by) {
           "\nSource: " + (row[14] || "website") + "\n\nOpen the Studio Admin app or the sheet to confirm or cancel."
       });
   } catch (mailErr) { console.error("Owner mail error: " + mailErr); }
+  if (!admin) try { push_("New booking: " + name, row[6] + " · " + when, { type: "booking", row: String(r), name: name, pkg: String(row[6]), when: when }); } catch (pushErr) { console.error("Push error: " + pushErr); }
   try {
     if (emailOk && ((!admin && CONFIG.SEND_CLIENT_EMAIL) || (admin && d.notifyClient))) {
       mail_({
@@ -585,6 +586,8 @@ function adminApi_(d) {
   if ((OWNER_ONLY[d.action] && me.role !== "Owner") || ((MANAGER_UP[d.action] || MONEY_ACTIONS[d.action]) && me.role === "Staff")) return { ok: false, error: "forbidden" };
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   switch (d.action) {
+    case "admin_push_register": return pushRegister_(d.token, me.name, true);
+    case "admin_push_unregister": return pushRegister_(d.token, me.name, false);
     case "admin_list": { var lst = adminList_(d.all === true); lst.me = me; return lst; }
 
     case "admin_status": {
@@ -1343,4 +1346,71 @@ function sendClientReminders() {
       });
     } catch (err) { console.error("Reminder error: " + err); }
   });
+}
+
+
+/* ================= Instant phone alerts (Firebase Cloud Messaging) =================
+ * Setup: see README, "Instant alerts". Needs the script property FCM_SERVICE_ACCOUNT
+ * (the whole service-account JSON file from Firebase). Until it is set, nothing is sent and the app falls back
+ * to checking every 15 minutes. */
+function pushTokens_() { try { return JSON.parse(PropertiesService.getScriptProperties().getProperty("FCM_TOKENS") || "{}"); } catch (e) { return {}; } }
+
+function pushRegister_(token, who, add) {
+  token = String(token || "");
+  if (token.length < 20) return { ok: false, error: "bad_token" };
+  var lock = LockService.getScriptLock(); lock.waitLock(10000);
+  try {
+    var t = pushTokens_();
+    if (add) t[token] = { who: String(who || ""), at: todayStr_() }; else delete t[token];
+    PropertiesService.getScriptProperties().setProperty("FCM_TOKENS", JSON.stringify(t));
+  } finally { lock.releaseLock(); }
+  return { ok: true, configured: !!PropertiesService.getScriptProperties().getProperty("FCM_SERVICE_ACCOUNT") };
+}
+
+function fcmAccessToken_(sa) {
+  var cache = CacheService.getScriptCache(), cached = cache.get("fcm_at");
+  if (cached) return cached;
+  var now = Math.floor(Date.now() / 1000);
+  var b64 = function (x) { return Utilities.base64EncodeWebSafe(x).replace(/=+$/, ""); };
+  var head = b64(JSON.stringify({ alg: "RS256", typ: "JWT" }));
+  var claim = b64(JSON.stringify({ iss: sa.client_email, scope: "https://www.googleapis.com/auth/firebase.messaging", aud: "https://oauth2.googleapis.com/token", iat: now, exp: now + 3600 }));
+  var sig = Utilities.base64EncodeWebSafe(Utilities.computeRsaSha256Signature(head + "." + claim, sa.private_key)).replace(/=+$/, "");
+  var r = UrlFetchApp.fetch("https://oauth2.googleapis.com/token", { method: "post", muteHttpExceptions: true,
+    payload: { grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer", assertion: head + "." + claim + "." + sig } });
+  var j = JSON.parse(r.getContentText());
+  if (!j.access_token) throw new Error("FCM auth failed: " + r.getContentText());
+  cache.put("fcm_at", j.access_token, 3000);
+  return j.access_token;
+}
+
+/** Sends a data message to every registered phone. Never throws into the booking flow's caller (callers wrap it). */
+function push_(title, body, data) {
+  var raw = PropertiesService.getScriptProperties().getProperty("FCM_SERVICE_ACCOUNT");
+  if (!raw) return 0;
+  var sa = JSON.parse(raw), tokens = pushTokens_(), keys = Object.keys(tokens);
+  if (!keys.length) return 0;
+  var at = fcmAccessToken_(sa), sent = 0, dead = [];
+  var payload = {}; for (var k in (data || {})) payload[k] = String(data[k]);
+  payload.title = title; payload.body = body;
+  keys.forEach(function (tok) {
+    var r = UrlFetchApp.fetch("https://fcm.googleapis.com/v1/projects/" + sa.project_id + "/messages:send", {
+      method: "post", contentType: "application/json", muteHttpExceptions: true, headers: { Authorization: "Bearer " + at },
+      payload: JSON.stringify({ message: { token: tok, data: payload, android: { priority: "HIGH", ttl: "3600s" } } })
+    });
+    var code = r.getResponseCode();
+    if (code === 200) sent++;
+    else if (code === 404 || code === 400) dead.push(tok); // phone uninstalled the app, or token is no longer valid
+    else console.error("FCM " + code + ": " + r.getContentText());
+  });
+  if (dead.length) {
+    var t = pushTokens_(); dead.forEach(function (x) { delete t[x]; });
+    PropertiesService.getScriptProperties().setProperty("FCM_TOKENS", JSON.stringify(t));
+  }
+  return sent;
+}
+
+/** Run once from the editor (after setup): sends a test alert to every phone that has signed in to the app. */
+function testPush() {
+  var n = push_("Test alert", "Instant alerts are working.", { type: "test" });
+  console.log("Sent to " + n + " phone(s). Registered phones: " + Object.keys(pushTokens_()).length);
 }

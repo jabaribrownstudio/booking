@@ -66,6 +66,25 @@ object Notify {
         }
     }
 
+    /** Shows an alert straight from an instant (push) message, and remembers the row so the 15-minute check doesn't repeat it. */
+    fun fromPush(ctx: Context, store: Store, d: Map<String, String>) {
+        val row = d["row"]?.toIntOrNull() ?: return
+        store.seenRows()?.let { store.setSeenRows(it + row) }
+        if (!allowed(ctx)) return
+        ensureChannel(ctx)
+        val open = Intent(ctx, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra("bookingRow", row)
+        }
+        val pi = PendingIntent.getActivity(ctx, row, open, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        val text = listOf(d["pkg"] ?: "", d["when"] ?: "").filter { it.isNotBlank() }.joinToString(" · ")
+        val n = NotificationCompat.Builder(ctx, CHANNEL).setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle(d["title"] ?: "New booking").setContentText(text)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
+            .setContentIntent(pi).setAutoCancel(true).setPriority(NotificationCompat.PRIORITY_HIGH).build()
+        try { NotificationManagerCompat.from(ctx).notify(row, n) } catch (e: SecurityException) { }
+    }
+
     /** Reminds about confirmed appointments that start within the next hour (checked every ~15 minutes). */
     private fun remind(ctx: Context, store: Store, bookings: List<Booking>) {
         val now = java.time.LocalDateTime.now()

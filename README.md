@@ -185,3 +185,11 @@ Team accounts, owner setup and recovery stay in the web admin app. The build use
 - The app keeps a saved copy of your bookings so it opens instantly, then refreshes in the background. Only the last 60 days of bookings load by default; open **Past** and tap **Load older bookings** for the rest.
 - Notifications: new bookings and reminders (about an hour before confirmed appointments) are checked every ~15 minutes. Account → **Send a test notification** confirms alerts reach your phone.
 - Each build publishes an optimised (non-debug) APK, signed with the same key, so it installs over the old one.
+
+## Instant alerts (Firebase push) — one-time setup
+Without this the app checks for new bookings every ~15 minutes. With it, your phone is alerted within seconds. It is free.
+1. Go to https://console.firebase.google.com → Add project (name it anything; skip Analytics).
+2. Project settings (gear) → General → Your apps → Add app → Android. Package name: `com.jabaribrownstudio.admin`. Register it (skip the other steps). Copy these four values into `android/app/src/main/java/com/jabaribrownstudio/admin/AppConfig.kt`: API key (`FIREBASE_API_KEY`), App ID (`FIREBASE_APP_ID`), Project ID (`FIREBASE_PROJECT_ID`), Project number / sender ID (`FIREBASE_SENDER_ID`). They are found in the downloadable `google-services.json` too. These four are not secret.
+3. Project settings → Service accounts → Generate new private key. **This file is secret.** Open it, copy the whole text, then in Apps Script: Project Settings → Script properties → Add `FCM_SERVICE_ACCOUNT` = that text. Never put it on GitHub.
+4. In Google Cloud (same project) make sure the "Firebase Cloud Messaging API" is enabled (Firebase does this for new projects).
+5. Redeploy Code.gs (New version), install the new app, sign in once, then run `testPush` in the Apps Script editor (approve the permission prompt the first time).
