@@ -41,8 +41,12 @@ class Store(context: Context) {
 
     val signedIn: Boolean get() = mode.isNotEmpty() && secret.isNotEmpty()
 
+    /** The last answers from the server, so the app can show something instantly while it refreshes. */
+    fun putCache(key: String, json: String) = prefs.edit().putString("cache_$key", json).apply()
+    fun getCache(key: String): String? = prefs.getString("cache_$key", null)
+
     fun signOut() {
-        prefs.edit().remove("mode").remove("username").remove("secret").remove("widget").remove("widgetName").remove("widgetAt").apply()
+        prefs.edit().remove("cache_list").remove("cache_money").remove("mode").remove("username").remove("secret").remove("widget").remove("widgetName").remove("widgetAt").apply()
     }
 
     /* ---- widget cache ---- */

@@ -221,9 +221,18 @@ private fun InvoiceDetail(vm: MainViewModel, inv: Invoice, onClose: () -> Unit, 
             if (inv.isInvoice) {
                 inv.payments.forEachIndexed { i, p ->
                     Row(verticalAlignment = Alignment.CenterVertically) {
+                        var pm by remember { mutableStateOf(false) }
                         Text("Paid ${Fmt.date(p.date)} · ${p.method}", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
                         Text(Fmt.cash(p.amount))
-                        IconButton(onClick = { vm.removePayment(inv.row, i) }, modifier = Modifier.size(32.dp)) { Icon(Icons.Outlined.Close, "Remove payment", Modifier.size(16.dp)) }
+                        Box {
+                            TextButton(onClick = { pm = true }) { Text("Receipt") }
+                            DropdownMenu(expanded = pm, onDismissRequest = { pm = false }) {
+                                DropdownMenuItem(text = { Text("Email receipt") }, onClick = { pm = false; vm.emailReceipt(inv.row, i) })
+                                DropdownMenuItem(text = { Text("View PDF") }, onClick = { pm = false; vm.fetchReceiptPdf(inv.row, i) { f -> openFile(ctx, f) } })
+                                DropdownMenuItem(text = { Text("Share PDF") }, onClick = { pm = false; vm.fetchReceiptPdf(inv.row, i) { f -> shareFile(ctx, f) } })
+                                DropdownMenuItem(text = { Text("Remove payment") }, onClick = { pm = false; vm.removePayment(inv.row, i) })
+                            }
+                        }
                     }
                 }
                 Row { Text("Amount due", Modifier.weight(1f), fontWeight = FontWeight.Bold); Text(Fmt.cash(inv.owing), fontWeight = FontWeight.Bold) }
@@ -251,7 +260,7 @@ private fun InvoiceDetail(vm: MainViewModel, inv: Invoice, onClose: () -> Unit, 
             }
         }
     }
-    if (paying) PaymentDialog(inv, onDismiss = { paying = false }) { amt, date, method -> paying = false; vm.payInvoice(inv.row, amt, date, method) }
+    if (paying) PaymentDialog(inv, onDismiss = { paying = false }) { amt, date, method, receipt -> paying = false; vm.payInvoice(inv.row, amt, date, method, receipt) }
     if (confirmDelete) AlertDialog(
         onDismissRequest = { confirmDelete = false },
         title = { Text("Delete #${inv.number}?") }, text = { Text("This removes it from your records.") },
@@ -266,7 +275,8 @@ private fun pickDate(ctx: Context, cur: String, set: (String) -> Unit) {
 }
 
 @Composable
-private fun PaymentDialog(inv: Invoice, onDismiss: () -> Unit, onSave: (Double, String, String) -> Unit) {
+private fun PaymentDialog(inv: Invoice, onDismiss: () -> Unit, onSave: (Double, String, String, Boolean) -> Unit) {
+    var receipt by remember { mutableStateOf(inv.email.isNotBlank()) }
     val ctx = LocalContext.current
     var amount by remember { mutableStateOf(String.format(java.util.Locale.US, "%.2f", inv.owing)) }
     var date by remember { mutableStateOf(LocalDate.now().toString()) }
@@ -278,9 +288,12 @@ private fun PaymentDialog(inv: Invoice, onDismiss: () -> Unit, onSave: (Double, 
                 OutlinedTextField(amount, { amount = it.filter { c -> c.isDigit() || c == '.' } }, label = { Text("Amount (${AppConfig.CURRENCY})") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
                 OutlinedButton(onClick = { pickDate(ctx, date) { date = it } }, modifier = Modifier.fillMaxWidth()) { Text(Fmt.date(date)) }
                 OutlinedTextField(method, { method = it }, label = { Text("Paid by (bank payment, cash…)") }, singleLine = true)
+                if (inv.email.isNotBlank()) Row(Modifier.fillMaxWidth().clickable { receipt = !receipt }, verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = receipt, onCheckedChange = { receipt = it }); Text("Email a receipt to the client")
+                } else Text("No client email, so no receipt will be sent.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         },
-        confirmButton = { TextButton(onClick = { val a = amount.toDoubleOrNull() ?: 0.0; if (a > 0) onSave(a, date, method) }) { Text("Save") } },
+        confirmButton = { TextButton(onClick = { val a = amount.toDoubleOrNull() ?: 0.0; if (a > 0) onSave(a, date, method, receipt && inv.email.isNotBlank()) }) { Text("Save") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
 }

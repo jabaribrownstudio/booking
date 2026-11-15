@@ -39,9 +39,21 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
     val mode: String get() = store.mode
     val username: String get() = store.username
 
+    private var lastLoad = 0L
+
     init {
-        if (store.signedIn) { Sync.schedule(app); load() }
+        if (store.signedIn) {
+            // Show what we had last time straight away, then refresh quietly.
+            store.getCache("list")?.let { try { val d = parseAdminData(JSONObject(it)); data = d; hoursDraft = d.hours } catch (e: Exception) { } }
+            store.getCache("money")?.let { try { val m = parseMoney(JSONObject(it)); money = m; moneyYear = m.finance.year } catch (e: Exception) { } }
+            Sync.schedule(app)
+            load()
+            if (data?.me?.isManager == true) loadMoney()
+        }
     }
+
+    /** Refreshes when the app comes back to the front, unless it was refreshed a moment ago. */
+    fun refreshIfStale() { if (System.currentTimeMillis() - lastLoad > 45000) load() }
 
     fun clearMessage() { message = null }
 
@@ -79,6 +91,8 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
             if (r != null && r.ok) {
                 val d = parseAdminData(r.json)
                 data = d
+                lastLoad = System.currentTimeMillis()
+                store.putCache("list", r.json.toString())
                 if (!hoursDirty) hoursDraft = d.hours
                 store.saveWidget(Sync.upcoming(d.bookings).take(30), d.me.name)
                 try { BookingsWidget().updateAll(app) } catch (e: Exception) { }
@@ -119,10 +133,13 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun setStatus(row: Int, status: String, extras: List<LineItem>? = null, sendInvoice: Boolean = true) {
+    fun setStatus(row: Int, status: String, extras: List<LineItem>? = null, sendInvoice: Boolean = true, comment: String = "") {
+        // Show the change at once; the refresh below corrects it if the server disagrees.
+        data?.let { d -> data = d.copy(bookings = d.bookings.map { if (it.row == row) it.copy(status = status) else it }) }
         viewModelScope.launch {
             busy = true
             val d = JSONObject().put("row", row).put("status", status)
+            if (comment.isNotBlank()) d.put("comment", comment.trim())
             if (status == "Confirmed" && extras != null) d.put("invoice", JSONObject().put("extras", itemsJson(extras)).put("send", sendInvoice))
             val r = act("admin_status", d)
             busy = false
@@ -131,6 +148,8 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
                 openRow = -1
                 loading = false; load()
                 if (status == "Confirmed") loadMoney()
+            } else {
+                loading = false; load()
             }
         }
     }
@@ -219,7 +238,7 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             moneyLoading = true
             val r = act("admin_money", JSONObject().put("year", year))
-            if (r != null && r.ok) { val m = parseMoney(r.json); money = m; moneyYear = m.finance.year }
+            if (r != null && r.ok) { val m = parseMoney(r.json); money = m; moneyYear = m.finance.year; if (m.finance.year == java.time.LocalDate.now().year) store.putCache("money", r.json.toString()) }
             else if (r != null) message = "Couldn't load invoices."
             moneyLoading = false
         }
@@ -265,13 +284,41 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun payInvoice(row: Int, amount: Double, date: String, method: String) {
+    fun payInvoice(row: Int, amount: Double, date: String, method: String, receipt: Boolean) {
         viewModelScope.launch {
             busy = true
-            val r = act("admin_inv_pay", JSONObject().put("row", row).put("amount", amount).put("date", date).put("method", method))
+            val r = act("admin_inv_pay", JSONObject().put("row", row).put("amount", amount).put("date", date).put("method", method).put("receipt", receipt))
             busy = false
-            moneyDone(r, "Payment recorded", "Couldn't record that payment.")
+            moneyDone(r, if (r?.json?.optBoolean("receiptSent") == true) "Payment recorded and receipt emailed" else "Payment recorded", "Couldn't record that payment.")
         }
+    }
+
+    fun emailReceipt(row: Int, index: Int) {
+        viewModelScope.launch {
+            busy = true
+            val r = act("admin_inv_receipt", JSONObject().put("row", row).put("index", index).put("mode", "email"))
+            busy = false
+            if (r != null) message = if (r.ok) "Receipt emailed" else if (r.error == "no_email") "Add the client's email address first." else "Couldn't send the receipt."
+        }
+    }
+
+    fun fetchReceiptPdf(row: Int, index: Int, onFile: (java.io.File) -> Unit) {
+        viewModelScope.launch {
+            busy = true
+            val r = act("admin_inv_receipt", JSONObject().put("row", row).put("index", index).put("mode", "pdf"))
+            busy = false
+            if (r != null && r.ok) savePdf(r, onFile) else if (r != null) message = "Couldn't create the receipt."
+        }
+    }
+
+    private fun savePdf(r: ApiResult, onFile: (java.io.File) -> Unit) {
+        try {
+            val bytes = android.util.Base64.decode(r.json.optString("pdf"), android.util.Base64.DEFAULT)
+            val dir = java.io.File(app.cacheDir, "pdfs").also { it.mkdirs() }
+            val f = java.io.File(dir, r.json.optString("name", "document.pdf").replace(Regex("[^A-Za-z0-9 ._-]"), "_"))
+            f.writeBytes(bytes)
+            onFile(f)
+        } catch (e: Exception) { message = "Couldn't open the PDF." }
     }
 
     fun removePayment(row: Int, index: Int) {

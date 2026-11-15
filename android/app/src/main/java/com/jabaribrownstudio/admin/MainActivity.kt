@@ -32,6 +32,6 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        if (vm.signedIn && !vm.mustChange) vm.load()
+        if (vm.signedIn && !vm.mustChange) vm.refreshIfStale()
     }
 }

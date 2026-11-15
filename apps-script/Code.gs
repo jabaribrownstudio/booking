@@ -327,18 +327,21 @@ function niceTime_(t) {
   return (h % 12 || 12) + ":" + ("0" + (m % 60)).slice(-2) + " " + (h >= 12 ? "PM" : "AM");
 }
 
+var READ_ONLY = { admin_list: 1, admin_money: 1, admin_inv_pdf: 1, admin_inv_receipt: 1 };
+
 function doPost(e) {
-  var lock = LockService.getScriptLock();
+  var lock = LockService.getScriptLock(), locked = false;
   try {
-    lock.waitLock(20000);
     var d = JSON.parse(e.postData.contents);
+    // Reading doesn't change anything, so it doesn't have to queue behind other requests.
+    if (!READ_ONLY[d.action]) { lock.waitLock(20000); locked = true; }
     if (d.action && String(d.action).indexOf("admin_") === 0) return json_(adminApi_(d));
     return json_(createBooking_(d, false));
   } catch (err) {
     console.error(err);
     return json_({ ok: false, error: "server_error" });
   } finally {
-    try { lock.releaseLock(); } catch (x) { /* ignore */ }
+    try { if (locked) lock.releaseLock(); } catch (x) { /* ignore */ }
   }
 }
 
@@ -469,7 +472,7 @@ function mail_(o) {
 }
 
 /** Emails the client when a booking is Confirmed or Cancelled. */
-function sendStatusEmail_(sh, row, inv) {
+function sendStatusEmail_(sh, row, inv, comment) {
   try {
     if (!CONFIG.SEND_STATUS_EMAIL) return;
     var v = sh.getRange(row, 1, 1, HEADERS.length).getValues()[0];
@@ -481,7 +484,7 @@ function sendStatusEmail_(sh, row, inv) {
       ? "Hi " + first + ",\n\nGood news: your session is confirmed.\n\n" + v[COL.PACKAGE - 1] + "\n" + when +
         (v[12] ? "\nLocation: " + v[12] : "") + "\n\nReply to this email if anything needs to change.\n\nSee you then!\n– " + CONFIG.BUSINESS_NAME
       : "Hi " + first + ",\n\nYour booking for " + v[COL.PACKAGE - 1] + " on " + when +
-        " has been cancelled.\n\nIf you'd like to rebook or have any questions, just reply to this email.\n\n– " + CONFIG.BUSINESS_NAME;
+        " has been cancelled.\n\n" + (comment ? "A note from " + CONFIG.BUSINESS_NAME + ": " + comment + "\n\n" : "") + "If you'd like to rebook or have any questions, just reply to this email.\n\n– " + CONFIG.BUSINESS_NAME;
     var mail = {
       to: email, replyTo: CONFIG.OWNER_EMAIL, name: CONFIG.BUSINESS_NAME,
       subject: (status === "Confirmed" ? "Your session is confirmed – " : "Your booking was cancelled – ") + CONFIG.BUSINESS_NAME,
@@ -595,7 +598,12 @@ function adminApi_(d) {
         if (d.status === "Confirmed" && (invOpt || CONFIG.AUTO_INVOICE_ON_CONFIRM)) {
           try { inv = createInvoiceForBooking_(row, invOpt ? invOpt.extras : []); } catch (ie) { console.error("invoice: " + ie); }
         }
-        if (d.notifyClient !== false) sendStatusEmail_(sh, row, inv && !(invOpt && invOpt.send === false) ? inv : null);
+        var why = d.status === "Cancelled" ? cleanText_(d.comment, 500) : "";
+        if (why) {
+          var nc = sh.getRange(row, 14), oldNote = String(nc.getValue() || "");
+          nc.setValue(clean_((oldNote ? oldNote + " | " : "") + "Cancelled: " + why, 1000));
+        }
+        if (d.notifyClient !== false) sendStatusEmail_(sh, row, inv && !(invOpt && invOpt.send === false) ? inv : null, why);
       }
       syncCalendar_(sh, row);
       return { ok: true };
@@ -709,7 +717,7 @@ var PACKAGE_DETAILS = {
   "professional headshot": { title: "Professional Headshot", lines: ["Duration: 20 minutes", "5 Retouched Images", "1 Outfit", "1 Studio Setup"] }
 };
 
-var MONEY_ACTIONS = { admin_money: 1, admin_inv_save: 1, admin_inv_send: 1, admin_inv_pay: 1, admin_inv_unpay: 1, admin_inv_status: 1,
+var MONEY_ACTIONS = { admin_inv_receipt: 1, admin_money: 1, admin_inv_save: 1, admin_inv_send: 1, admin_inv_pay: 1, admin_inv_unpay: 1, admin_inv_status: 1,
                       admin_inv_convert: 1, admin_inv_pdf: 1, admin_inv_delete: 1, admin_fee_add: 1, admin_fee_remove: 1 };
 
 function safeJson_(v, fallback) { try { var x = JSON.parse(String(v)); return x == null ? fallback : x; } catch (e) { return fallback; } }
@@ -972,10 +980,56 @@ function testInvoice() {
   mail_({ to: CONFIG.OWNER_EMAIL, subject: "Sample invoice from your booking app", body: "Here is a sample invoice.", attachments: [invoicePdf_(inv)] });
 }
 
+
+/* ---- receipts ---- */
+var STAMP_B64 = "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";
+
+function receiptHtml_(inv, pay) {
+  var logo = logoTag_() || '<span style="font-size:20px;font-weight:bold;">' + esc_(CONFIG.BUSINESS_NAME) + '</span>';
+  var due = Math.max(0, Math.round((inv.total - inv.paid) * 100) / 100), full = inv.status === "Paid";
+  var h = '<html><body style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#222222;margin:0;padding:0;">' +
+    '<div align="center">' + logo +
+    '<div style="font-size:34px;font-weight:bold;color:#14202b;margin-top:34px;">Payment Receipt</div>' +
+    '<div style="font-size:24px;font-weight:bold;margin-top:10px;">Invoice #' + inv.number + '</div>' +
+    '<div style="font-size:18px;color:#555555;margin-top:10px;">for ' + esc_(inv.client) + '</div>' +
+    '<div style="font-size:18px;color:#555555;margin-top:6px;">paid on ' + esc_(fmtDate_(pay.date)) + '</div>' +
+    '<div style="margin-top:34px;line-height:1.7;color:#455560;font-size:15px;"><b>' + esc_(CONFIG.BUSINESS_NAME) + '</b><br>' +
+    CONFIG.BUSINESS_LINES.map(esc_).join("<br>") + '<br>' + esc_(CONFIG.BUSINESS_PHONE) + '<br>' + esc_(CONFIG.BUSINESS_EMAIL) + '</div>' +
+    '<div style="border-top:1px solid #d5dde3;margin:30px 0 26px 0;"></div>' +
+    '<table width="88%" cellpadding="0" cellspacing="0" style="border-top:1px solid #d5dde3;border-bottom:1px solid #d5dde3;"><tr><td align="center" style="padding:22px 0;font-size:22px;">' +
+    'Payment Amount: <b>' + money_(pay.amount) + ' ' + CONFIG.CURRENCY_CODE + '</b></td></tr></table>';
+  if (pay.method) h += '<div style="color:#667780;margin-top:12px;">Paid by ' + esc_(pay.method) + '</div>';
+  if (full) {
+    h += '<div style="margin-top:34px;"><img src="data:image/png;base64,' + STAMP_B64 + '" width="260" style="width:260px;"></div>';
+  } else {
+    h += '<div style="margin-top:30px;font-size:16px;color:#555555;">Invoice total ' + money_(inv.total) + ' &nbsp;·&nbsp; Balance remaining <b>' + money_(due) + '</b></div>';
+  }
+  h += '<div style="margin-top:40px;color:#888888;">' + esc_(CONFIG.INVOICE_FOOTER) + '</div></div></body></html>';
+  return h;
+}
+
+function receiptPdf_(inv, pay) {
+  var label = "Receipt - Invoice " + inv.number + " - " + inv.client.replace(/[^\w .-]/g, "");
+  return Utilities.newBlob(receiptHtml_(inv, pay), "text/html", label + ".html").getAs("application/pdf").setName(label + ".pdf");
+}
+
+function emailReceipt_(inv, pay) {
+  if (!validEmail_(inv.email)) return false;
+  var due = Math.max(0, Math.round((inv.total - inv.paid) * 100) / 100), first = inv.client.split(" ")[0];
+  mail_({ to: inv.email, replyTo: CONFIG.OWNER_EMAIL, name: CONFIG.BUSINESS_NAME,
+    subject: "Receipt for Invoice #" + inv.number + " from " + CONFIG.BUSINESS_NAME,
+    body: "Hi " + first + ",\n\nThank you! We received your payment of " + money_(pay.amount) + " on " + fmtDate_(pay.date) + ".\n\n" +
+      (due > 0 ? "Remaining balance on invoice #" + inv.number + ": " + money_(due) + "." : "Invoice #" + inv.number + " is now paid in full.") +
+      "\n\nYour receipt is attached.\n\n– " + CONFIG.BUSINESS_NAME,
+    attachments: [receiptPdf_(inv, pay)] });
+  return true;
+}
+
 /* ---- money summary ---- */
 
-function finance_(year) {
-  var all = readInv_(), months = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], collected = 0, invoiced = 0, outstanding = 0, overdue = 0, estOpen = 0, estCount = 0, years = {};
+function finance_(year, all) {
+  all = all || readInv_();
+  var months = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], collected = 0, invoiced = 0, outstanding = 0, overdue = 0, estOpen = 0, estCount = 0, years = {};
   var today = todayStr_();
   years[+today.slice(0, 4)] = 1;
   all.forEach(function (i) {
@@ -1009,7 +1063,7 @@ function moneyApi_(d) {
     case "admin_money": {
       var year = parseInt(d.year, 10) || +todayStr_().slice(0, 4);
       var all = readInv_().sort(function (a, b) { return a.date < b.date ? 1 : a.date > b.date ? -1 : b.number - a.number; });
-      return { ok: true, invoices: all, fees: feesList_(), finance: finance_(year), currency: CONFIG.CURRENCY_SYMBOL };
+      return { ok: true, invoices: all, fees: feesList_(), finance: finance_(year, all), currency: CONFIG.CURRENCY_SYMBOL };
     }
 
     case "admin_inv_save": {
@@ -1054,7 +1108,27 @@ function moneyApi_(d) {
       p.payments.push({ date: isYmd_(d.date) ? d.date : todayStr_(), amount: amt, method: cleanText_(d.method, 40) || "bank payment" });
       setPaidStatus_(p);
       writeInv_(p);
-      return { ok: true };
+      var rsent = false;
+      if (d.receipt !== false && validEmail_(p.email)) {
+        try { rsent = emailReceipt_(p, p.payments[p.payments.length - 1]); } catch (re) { console.error("receipt: " + re); }
+      }
+      return { ok: true, receiptSent: rsent };
+    }
+
+    case "admin_inv_receipt": {
+      var ri = getInv_(d.row), rx = parseInt(d.index, 10);
+      if (!ri || ri.type !== "Invoice" || !(rx >= 0 && rx < ri.payments.length)) return { ok: false, error: "invalid_input" };
+      // Show the balance as it stood at the end of this payment.
+      var upto = 0, k; for (k = 0; k <= rx; k++) upto += +ri.payments[k].amount || 0;
+      var snap = JSON.parse(JSON.stringify(ri)); snap.paid = Math.round(upto * 100) / 100;
+      snap.status = snap.paid >= snap.total - 0.005 && snap.total > 0 ? "Paid" : "Partial";
+      if (d.mode === "email") {
+        if (!validEmail_(ri.email)) return { ok: false, error: "no_email" };
+        emailReceipt_(snap, ri.payments[rx]);
+        return { ok: true };
+      }
+      var rb = receiptPdf_(snap, ri.payments[rx]);
+      return { ok: true, name: rb.getName(), pdf: Utilities.base64Encode(rb.getBytes()) };
     }
 
     case "admin_inv_unpay": {

@@ -80,7 +80,7 @@ fun BookingsTab(vm: MainViewModel, pad: PaddingValues) {
             val list = filtered(all, vm.filter)
             val today = LocalDate.now()
             val todayN = all.count { it.isActive && it.localDate == today && (it.endDateTime ?: it.startDateTime)?.isAfter(LocalDateTime.now()) == true }
-            val weekN = all.count { it.isActive && it.localDate != null && !it.localDate!!.isBefore(today) && !it.localDate!!.isAfter(today.plusDays(6)) }
+            val weekN = all.count { it.isActive && it.localDate != null && !it.localDate!!.isBefore(today) && !it.localDate!!.isAfter(today.plusDays(29)) }
             val pendN = filtered(all, "Pending").size
             LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 96.dp)) {
                 item {
@@ -92,7 +92,7 @@ fun BookingsTab(vm: MainViewModel, pad: PaddingValues) {
                     Spacer(Modifier.height(16.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
                         Stat("Today", todayN, Modifier.weight(1f))
-                        Stat("Next 7 days", weekN, Modifier.weight(1f))
+                        Stat("Next 30 days", weekN, Modifier.weight(1f))
                         Stat("Pending", pendN, Modifier.weight(1f))
                     }
                     Spacer(Modifier.height(14.dp))
@@ -115,7 +115,7 @@ fun BookingsTab(vm: MainViewModel, pad: PaddingValues) {
                             )
                         }
                         items(bs, key = { it.row }) { b ->
-                            BookingCard(b, expanded = vm.openRow == b.row, onToggle = { vm.openRow = if (vm.openRow == b.row) -1 else b.row }, onStatus = { s -> if (s == "Confirmed" && d?.me?.isManager == true) confirming = b else vm.setStatus(b.row, s) })
+                            BookingCard(b, expanded = vm.openRow == b.row, onToggle = { vm.openRow = if (vm.openRow == b.row) -1 else b.row }, onStatus = { s, note -> if (s == "Confirmed" && d?.me?.isManager == true) confirming = b else vm.setStatus(b.row, s, comment = note) })
                             Spacer(Modifier.height(8.dp))
                         }
                     }
@@ -153,9 +153,10 @@ private fun StatusPill(status: String) {
 }
 
 @Composable
-private fun BookingCard(b: Booking, expanded: Boolean, onToggle: () -> Unit, onStatus: (String) -> Unit) {
+private fun BookingCard(b: Booking, expanded: Boolean, onToggle: () -> Unit, onStatus: (String, String) -> Unit) {
     val ctx = LocalContext.current
     var confirmCancel by remember { mutableStateOf(false) }
+    var cancelNote by remember { mutableStateOf("") }
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth().animateContentSize().clickable { onToggle() }
@@ -195,8 +196,8 @@ private fun BookingCard(b: Booking, expanded: Boolean, onToggle: () -> Unit, onS
                 }
                 Spacer(Modifier.height(12.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (b.status != "Confirmed") Button(onClick = { onStatus("Confirmed") }, modifier = Modifier.weight(1f)) { Text("Confirm") }
-                    if (b.status != "Pending") OutlinedButton(onClick = { onStatus("Pending") }, modifier = Modifier.weight(1f)) { Text("Set pending") }
+                    if (b.status != "Confirmed") Button(onClick = { onStatus("Confirmed", "") }, modifier = Modifier.weight(1f)) { Text("Confirm") }
+                    if (b.status != "Pending") OutlinedButton(onClick = { onStatus("Pending", "") }, modifier = Modifier.weight(1f)) { Text("Set pending") }
                     if (b.status != "Cancelled") OutlinedButton(
                         onClick = { confirmCancel = true }, modifier = Modifier.weight(1f),
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
@@ -209,8 +210,17 @@ private fun BookingCard(b: Booking, expanded: Boolean, onToggle: () -> Unit, onS
     if (confirmCancel) androidx.compose.material3.AlertDialog(
         onDismissRequest = { confirmCancel = false },
         title = { Text("Cancel this booking?") },
-        text = { Text("${b.name}'s time will open up again for other clients.") },
-        confirmButton = { androidx.compose.material3.TextButton(onClick = { confirmCancel = false; onStatus("Cancelled") }) { Text("Cancel booking") } },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("${b.name}'s time will open up again for other clients.")
+                androidx.compose.material3.OutlinedTextField(
+                    cancelNote, { cancelNote = it }, label = { Text("Comment (optional)") },
+                    supportingText = { Text(if (b.email.isNotBlank()) "Included in the cancellation email to the client." else "Saved in the booking's notes.") },
+                    modifier = Modifier.fillMaxWidth(), minLines = 2
+                )
+            }
+        },
+        confirmButton = { androidx.compose.material3.TextButton(onClick = { confirmCancel = false; onStatus("Cancelled", cancelNote); cancelNote = "" }) { Text("Cancel booking") } },
         dismissButton = { androidx.compose.material3.TextButton(onClick = { confirmCancel = false }) { Text("Keep it") } }
     )
 }
