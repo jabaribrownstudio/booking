@@ -189,10 +189,15 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
             val r = act("admin_status", d)
             busy = false
             if (r != null) {
-                message = if (r.ok) (if (status == "Cancelled") "Booking cancelled" else "Marked " + status.lowercase()) else "Couldn't update that booking."
+                message = if (r.ok) {
+                    if (status == "Cancelled") {
+                        val v = r.json.optInt("voided"); val k = r.json.optInt("kept")
+                        "Booking cancelled" + (if (v > 0) " and its invoice was voided" else "") + (if (k > 0) ". Its invoice has payments, so it was left as is." else "")
+                    } else "Marked " + status.lowercase()
+                } else "Couldn't update that booking."
                 openRow = -1
                 loading = false; load()
-                if (status == "Confirmed") loadMoney()
+                if (status == "Confirmed" || status == "Cancelled") loadMoney()
             } else {
                 loading = false; load()
             }

@@ -457,6 +457,7 @@ function onStatusEdit(e) {
       if (now === "Confirmed" && CONFIG.AUTO_INVOICE_ON_CONFIRM) {
         try { inv = createInvoiceForBooking_(e.range.getRow(), []); } catch (ie) { console.error("invoice: " + ie); }
       }
+      if (now === "Cancelled") { try { voidInvoicesForBooking_(e.range.getRow()); } catch (ve) { console.error("void: " + ve); } }
       sendStatusEmail_(sh, e.range.getRow(), inv);
     }
     syncCalendar_(sh, e.range.getRow());
@@ -606,7 +607,10 @@ function adminApi_(d) {
           var nc = sh.getRange(row, 14), oldNote = String(nc.getValue() || "");
           nc.setValue(clean_((oldNote ? oldNote + " | " : "") + "Cancelled: " + why, 1000));
         }
+        var vr = d.status === "Cancelled" ? voidInvoicesForBooking_(row) : { voided: 0, kept: 0 };
         if (d.notifyClient !== false) sendStatusEmail_(sh, row, inv && !(invOpt && invOpt.send === false) ? inv : null, why);
+        syncCalendar_(sh, row);
+        return { ok: true, voided: vr.voided, kept: vr.kept };
       }
       syncCalendar_(sh, row);
       return { ok: true };
@@ -890,6 +894,18 @@ function invoiceForBooking_(row) {
   var found = null;
   readInv_().forEach(function (i) { if (!found && i.type === "Invoice" && i.bookingRow === row && i.status !== "Void") found = i; });
   return found;
+}
+
+/** When a booking is cancelled, its unpaid invoices are voided. Invoices that already have payments are left alone (returned as `kept`). */
+function voidInvoicesForBooking_(row) {
+  var res = { voided: 0, kept: 0 };
+  readInv_().forEach(function (i) {
+    if (i.type !== "Invoice" || i.bookingRow !== row || i.status === "Void") return;
+    var paid = 0; (i.payments || []).forEach(function (p) { paid += +p.amount || 0; });
+    if (paid > 0.004) { res.kept++; return; }
+    i.status = "Void"; writeInv_(i); res.voided++;
+  });
+  return res;
 }
 
 function createInvoiceForBooking_(row, extras, discount, taxes) {
