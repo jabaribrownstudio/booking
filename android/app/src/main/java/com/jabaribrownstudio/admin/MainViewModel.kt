@@ -76,7 +76,6 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
                 load()
                 if (data?.me?.isManager == true) loadMoney()
             }
-            java.io.File(app.cacheDir, "pdfs").listFiles()?.forEach { it.delete() }
         }
     }
 
