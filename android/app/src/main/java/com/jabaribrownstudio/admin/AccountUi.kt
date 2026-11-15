@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.dp
 fun AccountTab(vm: MainViewModel, pad: PaddingValues) {
     val me = vm.data?.me
     var changing by remember { mutableStateOf(false) }
+    var showTeam by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().padding(pad).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Text("Account", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(top = 8.dp))
         Card2 {
@@ -47,10 +48,12 @@ fun AccountTab(vm: MainViewModel, pad: PaddingValues) {
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
+        if (me?.role == "Owner") androidx.compose.material3.Button(onClick = { showTeam = true }, modifier = Modifier.fillMaxWidth().height(50.dp)) { Text("Manage team") }
         if (vm.mode == "worker") OutlinedButton(onClick = { changing = true }, modifier = Modifier.fillMaxWidth().height(50.dp)) { Text("Change password") }
         OutlinedButton(onClick = { vm.signOut() }, modifier = Modifier.fillMaxWidth().height(50.dp)) { Text("Sign out") }
-        Text("Team accounts are managed in the web admin app.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (me?.role != "Owner") Text("Only the owner can add or manage team members.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
+    if (showTeam) TeamSheet(vm) { showTeam = false }
     if (changing) {
         var cur by remember { mutableStateOf("") }
         var new by remember { mutableStateOf("") }

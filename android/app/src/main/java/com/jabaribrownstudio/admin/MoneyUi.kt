@@ -422,22 +422,32 @@ private fun InvoiceEditor(vm: MainViewModel, existing: Invoice?, type: String, o
 fun ConfirmBookingDialog(vm: MainViewModel, b: Booking, onDismiss: () -> Unit) {
     val fees = vm.money?.fees ?: emptyList()
     val picked = remember { mutableStateListOf<Int>() }
+    val custom = remember { mutableStateListOf<EditLine>() }
     var send by remember { mutableStateOf(b.email.isNotBlank()) }
     val base = bookingPrice(b)
-    val total = base + fees.filter { it.row in picked }.sumOf { it.price }
+    val total = base + fees.filter { it.row in picked }.sumOf { it.price } +
+        custom.sumOf { (it.qty.toDoubleOrNull() ?: 1.0) * (it.price.toDoubleOrNull() ?: 0.0) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Confirm ${b.name}'s booking") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Row { Text(b.pkg.ifBlank { "Session" }, Modifier.weight(1f)); Text(Fmt.cash(base)) }
-                if (fees.isNotEmpty()) Text("Add to the invoice", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 10.dp))
+                Text("Add to the invoice", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 10.dp))
                 fees.forEach { f ->
                     Row(Modifier.fillMaxWidth().clickable { if (f.row in picked) picked.remove(f.row) else picked.add(f.row) }, verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(checked = f.row in picked, onCheckedChange = { if (it) picked.add(f.row) else picked.remove(f.row) })
                         Text(f.name, Modifier.weight(1f)); Text(Fmt.cash(f.price))
                     }
                 }
+                custom.forEachIndexed { i, l ->
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 4.dp)) {
+                        OutlinedTextField(l.name, { l.name = it }, label = { Text("Item") }, singleLine = true, modifier = Modifier.weight(1.4f))
+                        OutlinedTextField(l.price, { l.price = it.filter { c -> c.isDigit() || c == '.' } }, label = { Text("Price") }, singleLine = true, modifier = Modifier.weight(1f), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
+                        IconButton(onClick = { custom.removeAt(i) }, modifier = Modifier.size(32.dp)) { Icon(Icons.Outlined.Close, "Remove item", Modifier.size(16.dp)) }
+                    }
+                }
+                TextButton(onClick = { custom.add(EditLine("", "", "1", "")) }) { Text("+ Add another item") }
                 HorizontalDivider(Modifier.padding(vertical = 6.dp))
                 Row { Text("Invoice total", Modifier.weight(1f), fontWeight = FontWeight.Bold); Text(Fmt.cash(total), fontWeight = FontWeight.Bold) }
                 if (b.email.isNotBlank()) Row(Modifier.fillMaxWidth().clickable { send = !send }, verticalAlignment = Alignment.CenterVertically) {
@@ -448,7 +458,8 @@ fun ConfirmBookingDialog(vm: MainViewModel, b: Booking, onDismiss: () -> Unit) {
         },
         confirmButton = {
             TextButton(onClick = {
-                val extras = fees.filter { it.row in picked }.map { LineItem(it.name, it.desc, 1.0, it.price) }
+                val extras = fees.filter { it.row in picked }.map { LineItem(it.name, it.desc, 1.0, it.price) } +
+                    custom.filter { it.name.isNotBlank() }.map { LineItem(it.name.trim(), "", it.qty.toDoubleOrNull()?.takeIf { q -> q > 0 } ?: 1.0, it.price.toDoubleOrNull() ?: 0.0) }
                 onDismiss(); vm.setStatus(b.row, "Confirmed", extras, send && b.email.isNotBlank())
             }) { Text("Confirm") }
         },

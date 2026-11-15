@@ -55,8 +55,10 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
     fun signOut() = forceSignOut("")
 
     /** Runs a backend action and deals with the common failures. Returns null if it failed (a message is already shown). */
-    private suspend fun act(action: String, d: JSONObject = JSONObject()): ApiResult? {
-        val r = try { backend.call(action, d) } catch (e: NetworkError) {
+    private suspend fun act(action: String, d: JSONObject = JSONObject()): ApiResult? = checked { backend.call(action, d) }
+
+    private suspend fun checked(call: suspend () -> ApiResult): ApiResult? {
+        val r = try { call() } catch (e: NetworkError) {
             message = "Can't reach the server. Check your connection."; return null
         } catch (e: Exception) { message = "Something went wrong. Try again."; return null }
         when {
@@ -331,6 +333,116 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
                     onFile(f)
                 } catch (e: Exception) { message = "Couldn't open the PDF." }
             } else if (r != null) message = "Couldn't create the PDF."
+        }
+    }
+
+    /* ---- team (owner only) ---- */
+    var team by mutableStateOf<List<TeamMember>>(emptyList())
+    var teamLoading by mutableStateOf(false)
+    /** A password or key to show the owner once: title to secret. */
+    var secretShown by mutableStateOf<Pair<String, String>?>(null)
+
+    private suspend fun teamCall(op: String, extra: JSONObject = JSONObject()): ApiResult? {
+        if (store.mode == "worker") {
+            return checked { Net.worker(store.workerUrl, "/team", extra.put("u", store.username).put("hash", store.secret).put("op", op)) }
+        }
+        val action = when (op) { "list" -> "admin_staff_list"; "add" -> "admin_staff_add"; "update" -> "admin_staff_update"; "setpw" -> "admin_staff_reset"; else -> "admin_staff_remove" }
+        return act(action, extra)
+    }
+
+    private fun parseTeam(j: JSONObject): List<TeamMember> {
+        val out = ArrayList<TeamMember>()
+        val a = (if (store.mode == "worker") j.optJSONArray("users") else j.optJSONArray("staff")) ?: JSONArray()
+        for (i in 0 until a.length()) {
+            val o = a.getJSONObject(i)
+            out.add(
+                TeamMember(
+                    id = o.optString("id"), row = o.optInt("row"), username = o.optString("username"), name = o.optString("name"),
+                    email = o.optString("email"), role = o.optString("role"), active = o.optBoolean("active", true),
+                    mustChange = o.optBoolean("mustChange", false), lastLogin = o.optString("lastLogin")
+                )
+            )
+        }
+        return out
+    }
+
+    fun loadTeam() {
+        viewModelScope.launch {
+            teamLoading = true
+            val r = teamCall("list")
+            if (r != null && r.ok) team = parseTeam(r.json)
+            teamLoading = false
+        }
+    }
+
+    private suspend fun newPw(password: String): JSONObject = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+        val salt = Net.newSalt()
+        JSONObject().put("salt", salt).put("hash", Net.hashPassword(password, salt))
+    }
+
+    private fun tempPassword(): String {
+        val alphabet = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789"
+        val rnd = java.security.SecureRandom()
+        return (1..10).map { alphabet[rnd.nextInt(alphabet.length)] }.joinToString("")
+    }
+
+    /** onDone gets null on success or "exists" / "invalid_input" / "other". */
+    fun addMember(name: String, username: String, email: String, role: String, onDone: (String?) -> Unit) {
+        viewModelScope.launch {
+            busy = true
+            val worker = store.mode == "worker"
+            val temp = tempPassword()
+            val body = JSONObject().put("name", name).put("role", role)
+            if (worker) body.put("username", username).put("email", email).put("pw", newPw(temp))
+            val r = teamCall("add", body)
+            busy = false
+            if (r == null) { onDone("other"); return@launch }
+            if (r.ok) {
+                secretShown = if (worker) ("Temporary password for $name" to "Username: $username\nPassword: $temp\n\nThey will be asked to choose their own password the first time they sign in.")
+                              else ("Admin key for $name" to r.json.optString("key"))
+                loadTeam(); onDone(null)
+            } else onDone(if (r.error == "exists") "exists" else if (r.error == "invalid_input") "invalid_input" else "other")
+        }
+    }
+
+    private fun ref(m: TeamMember): JSONObject = if (store.mode == "worker") JSONObject().put("id", m.id) else JSONObject().put("row", m.row)
+
+    fun setRole(m: TeamMember, role: String) {
+        viewModelScope.launch {
+            val r = teamCall("update", ref(m).put("role", role))
+            if (r != null) { message = if (r.ok) "${m.name} is now $role" else "Couldn't change that."; loadTeam() }
+        }
+    }
+
+    fun setActive(m: TeamMember, active: Boolean) {
+        viewModelScope.launch {
+            val r = teamCall("update", ref(m).put("active", active))
+            if (r != null) { message = if (r.ok) (if (active) "${m.name} can sign in again" else "${m.name} is locked out") else "Couldn't change that."; loadTeam() }
+        }
+    }
+
+    fun resetAccess(m: TeamMember) {
+        viewModelScope.launch {
+            busy = true
+            val worker = store.mode == "worker"
+            val temp = tempPassword()
+            val body = ref(m)
+            if (worker) body.put("pw", newPw(temp))
+            val r = teamCall("setpw", body)
+            busy = false
+            if (r != null) {
+                if (r.ok) secretShown = if (worker) ("New temporary password for ${m.name}" to "Username: ${m.username}\nPassword: $temp\n\nThey will choose their own password at next sign-in.")
+                                        else ("New admin key for ${m.name}" to r.json.optString("key"))
+                else message = "Couldn't reset that."
+                loadTeam()
+            }
+        }
+    }
+
+    fun removeMember(m: TeamMember) {
+        viewModelScope.launch {
+            val r = teamCall("remove", ref(m))
+            if (r != null) { message = if (r.ok) "${m.name} removed" else "Couldn't remove that."; loadTeam() }
         }
     }
 }

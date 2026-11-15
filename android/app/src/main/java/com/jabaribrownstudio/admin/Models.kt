@@ -99,3 +99,8 @@ fun parseAdminData(j: JSONObject): AdminData {
     val me = Me(mo?.optString("name") ?: "", mo?.optString("role") ?: "Staff")
     return AdminData(bs, hours, off, settings, me)
 }
+
+data class TeamMember(
+    val id: String, val row: Int, val username: String, val name: String, val email: String,
+    val role: String, val active: Boolean, val mustChange: Boolean, val lastLogin: String
+)
