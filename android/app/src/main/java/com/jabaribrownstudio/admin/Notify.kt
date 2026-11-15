@@ -115,6 +115,16 @@ object Notify {
         store.setRemindedRows(done.toList().takeLast(300))
     }
 
+    /** Shows a plain alert with a title and text (used for test messages from the server). */
+    fun simple(ctx: Context, title: String, body: String) {
+        if (!allowed(ctx)) return
+        ensureChannel(ctx)
+        val pi = PendingIntent.getActivity(ctx, 98, Intent(ctx, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        val n = NotificationCompat.Builder(ctx, CHANNEL).setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle(title).setContentText(body).setContentIntent(pi).setAutoCancel(true).setPriority(NotificationCompat.PRIORITY_HIGH).build()
+        try { NotificationManagerCompat.from(ctx).notify(98, n) } catch (e: SecurityException) { }
+    }
+
     /** Sends a test notification so the owner can confirm alerts reach this phone. */
     fun test(ctx: Context): Boolean {
         if (!allowed(ctx)) return false

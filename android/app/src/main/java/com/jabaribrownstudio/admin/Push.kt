@@ -63,7 +63,10 @@ class PushService : FirebaseMessagingService() {
 
     override fun onMessageReceived(message: RemoteMessage) {
         val d = message.data
-        if (d["type"] == "booking") Notify.fromPush(applicationContext, Store.get(applicationContext), d)
+        when (d["type"]) {
+            "booking" -> Notify.fromPush(applicationContext, Store.get(applicationContext), d)
+            else -> if (!d["title"].isNullOrBlank()) Notify.simple(applicationContext, d["title"] ?: "", d["body"] ?: "")
+        }
         // Refresh the widget and saved bookings too.
         CoroutineScope(Dispatchers.IO).launch { Sync.refresh(applicationContext) }
     }
