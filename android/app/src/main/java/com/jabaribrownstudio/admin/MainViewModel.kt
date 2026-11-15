@@ -86,6 +86,7 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
 
     private fun forceSignOut(note: String) {
         store.signOut()
+        bioLock = false; bioAsked = false; locked = false
         signedIn = false; mustChange = false; data = null; money = null
         loginError = note
         viewModelScope.launch { BookingsWidget().updateAll(app) }
@@ -168,6 +169,19 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
     }
 
     var usernameNow by mutableStateOf(store.username)
+
+    // Fingerprint / face / screen-lock unlock
+    var bioLock by mutableStateOf(store.bioLock)
+    var bioAsked by mutableStateOf(store.bioAsked)
+    var locked by mutableStateOf(store.signedIn && store.bioLock)
+    var bioAvailable by mutableStateOf(false)
+    /** Set by the activity: shows the system prompt, then calls back on success. */
+    var askBio: ((() -> Unit) -> Unit)? = null
+
+    fun enableBio() { askBio?.invoke { store.bioLock = true; bioLock = true; store.bioAsked = true; bioAsked = true; message = "Fingerprint unlock is on" } }
+    fun disableBio() { store.bioLock = false; bioLock = false; message = "Fingerprint unlock is off" }
+    fun declineBio() { store.bioAsked = true; bioAsked = true }
+    fun unlock() { askBio?.invoke { locked = false } }
 
     fun changeUsername(newName: String, onDone: (String?) -> Unit) {
         viewModelScope.launch {

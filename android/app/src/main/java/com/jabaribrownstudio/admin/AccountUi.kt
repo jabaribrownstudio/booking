@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -23,6 +24,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -48,6 +50,15 @@ fun AccountTab(vm: MainViewModel, pad: PaddingValues) {
                 "Press and hold an empty spot on your home screen, tap Widgets, find JB Studio Admin and drag “Upcoming” onto the screen. Resize it to show more appointments. It refreshes about every 30 minutes and whenever you open the app.",
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+        }
+        if (vm.bioAvailable || vm.bioLock) Card2 {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Unlock with fingerprint", style = MaterialTheme.typography.titleMedium)
+                    Text("Open the app with your fingerprint, face or screen lock.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                androidx.compose.material3.Switch(checked = vm.bioLock, onCheckedChange = { if (it) vm.enableBio() else vm.disableBio() })
+            }
         }
         val ctx = androidx.compose.ui.platform.LocalContext.current
         var testMsg by remember { mutableStateOf("") }

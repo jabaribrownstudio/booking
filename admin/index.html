@@ -75,6 +75,8 @@
     <img class="logo" src="../images/logo.png" alt="Jabari Brown Studio">
     <div class="top-actions">
       <span class="who" id="who"></span>
+      <button class="icon-btn" id="notif" type="button" aria-label="Turn on desktop notifications" hidden><svg viewBox="0 0 24 24"><path d="M6 17V11a6 6 0 0 1 12 0v6l1.5 2h-15zM10 21h4"/></svg></button>
+      <button class="icon-btn" id="chun" type="button" aria-label="Change username" hidden><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c0-3.5 3-5.5 7-5.5s7 2 7 5.5"/></svg></button>
       <button class="icon-btn" id="chpw" type="button" aria-label="Change password" hidden><svg viewBox="0 0 24 24"><circle cx="8" cy="15" r="3.5"/><path d="M10.5 12.5L19 4M16 7l2.5 2.5M13.5 9.5L16 12"/></svg></button>
       <button class="icon-btn" id="refresh" type="button" aria-label="Refresh"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v5h-5"/></svg></button>
       <button class="icon-btn" id="signout" type="button" aria-label="Sign out"><svg viewBox="0 0 24 24"><path d="M9 4H5v16h4M16 8l4 4-4 4M20 12H9"/></svg></button>
@@ -83,6 +85,7 @@
 
   <main>
     <section id="tab-bookings">
+      <div class="stats" id="bk-stats"></div>
       <div class="seg" id="filters" role="tablist">
         <button type="button" data-f="upcoming" class="on">Upcoming</button>
         <button type="button" data-f="pending">Pending <span class="badge" id="pend-count" hidden></span></button>
@@ -90,6 +93,11 @@
         <button type="button" data-f="cancelled">Cancelled</button>
       </div>
       <div id="list" class="list"></div>
+    </section>
+
+    <section id="tab-money" hidden>
+      <h2 style="margin-top:0">Accounting</h2>
+      <div id="money-root"></div>
     </section>
 
     <section id="tab-hours" hidden>
@@ -151,6 +159,7 @@
 
   <nav class="tabs" id="tabs">
     <button type="button" data-t="bookings" class="on"><svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>Bookings</button>
+    <button type="button" data-t="money" id="tab-money-btn" hidden><svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="2.5"/><circle cx="12" cy="12" r="2.6"/><path d="M6.5 9.5v.01M17.5 14.5v.01"/></svg>Accounting</button>
     <button type="button" data-t="hours" id="tab-hours-btn"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3 2"/></svg>Availability</button>
     <button type="button" data-t="team" id="tab-team-btn" hidden><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-5.5 6-5.5s6 2.2 6 5.5M16 5.2a3.2 3.2 0 0 1 0 5.6M18 14.8c1.8.7 3 2.4 3 5.2"/></svg>Team</button>
     <button type="button" data-t="settings" id="tab-settings-btn"><svg viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg>Settings</button>
@@ -209,6 +218,7 @@
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
 <script src="../js/config.js"></script>
+<script src="money.js"></script>
 <script src="admin.js"></script>
 </body>
 </html>

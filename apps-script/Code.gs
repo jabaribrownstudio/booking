@@ -710,7 +710,7 @@ function adminApi_(d) {
       return { ok: true };
     }
   }
-  if (MONEY_ACTIONS[d.action]) return moneyApi_(d);
+  if (MONEY_ACTIONS[d.action]) return moneyApi_(d, me);
   return { ok: false, error: "unknown_action" };
 }
 
@@ -1157,7 +1157,7 @@ function feesList_() {
     .filter(function (f) { return f.name; });
 }
 
-function moneyApi_(d) {
+function moneyApi_(d, me) {
   switch (d.action) {
     case "admin_money": {
       try { seedPackages_(); } catch (se) { console.error("seed: " + se); }

@@ -52,7 +52,7 @@ class Store private constructor(context: Context) {
     fun getCache(key: String): String? = prefs.getString("cache_$key", null)
 
     fun signOut() {
-        prefs.edit().remove("cache_list").remove("cache_money").remove("seenRows").remove("reminded").remove("pushToken").remove("mode").remove("username").remove("secret").remove("widget").remove("widgetName").remove("widgetAt").apply()
+        prefs.edit().remove("cache_list").remove("cache_money").remove("seenRows").remove("reminded").remove("pushToken").remove("bioLock").remove("bioAsked").remove("mode").remove("username").remove("secret").remove("widget").remove("widgetName").remove("widgetAt").apply()
     }
 
     /* ---- widget cache ---- */
@@ -81,6 +81,14 @@ class Store private constructor(context: Context) {
     /** Booking rows we have already told the owner about. Null until the first refresh. */
     fun seenRows(): Set<Int>? = prefs.getString("seenRows", null)?.split(",")?.mapNotNull { it.toIntOrNull() }?.toSet()
     fun setSeenRows(rows: Collection<Int>) = prefs.edit().putString("seenRows", rows.joinToString(",")).apply()
+
+    /** Whether opening the app needs a fingerprint / face / screen lock, and whether we already offered it. */
+    var bioLock: Boolean
+        get() = prefs.getBoolean("bioLock", false)
+        set(v) = prefs.edit().putBoolean("bioLock", v).apply()
+    var bioAsked: Boolean
+        get() = prefs.getBoolean("bioAsked", false)
+        set(v) = prefs.edit().putBoolean("bioAsked", v).apply()
 
     /** The Firebase token last registered with the server ("" if none). */
     var pushToken: String

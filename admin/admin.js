@@ -91,13 +91,14 @@
   async function load(quiet) {
     if (!quiet && !S.loaded) $("list").innerHTML = '<div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>';
     try {
-      const j = await api("admin_list");
+      const j = await api("admin_list", S.all ? { all: true } : {});
       if (!j || !j.ok) { toast("Couldn't load your data.", true); return false; }
       S.bookings = j.bookings; S.off = j.off; S.settings = j.settings; S.me = j.me || { name: "", role: "Staff" }; S.loaded = true;
       applyRole();
       if (S.me.role === "Owner") loadTeam();
       if (!S.hoursDirty) S.hours = JSON.parse(JSON.stringify(j.hours));
-      renderAll(); deepLink(); return true;
+      S.truncated = !!j.truncated; if (can.money() && window.StudioMoney && !window.StudioMoney.state.loaded) window.StudioMoney.load(true);
+      notifyNew(); renderAll(); deepLink(); return true;
     } catch (e) { fail(e); if (!S.loaded) $("list").innerHTML = '<div class="empty">Couldn\'t load bookings.<br>Pull the refresh button to try again.</div>'; return false; }
   }
 
@@ -114,7 +115,7 @@
     $("login-note").hidden = !note; $("login-note").textContent = note || "";
     loginMode(W ? (S.empty ? "setup-form" : "pw-form") : "login-form");
   }
-  function showApp() { $("login").hidden = true; $("app").hidden = false; $("chpw").hidden = !W; load(); }
+  function showApp() { $("login").hidden = true; $("app").hidden = false; $("chpw").hidden = !W; $("chun").hidden = !W; $("notif").hidden = !("Notification" in window); load(); }
   function signOut(note) {
     key = ""; CRED = null; S.me = null; S.staff = [];
     try { localStorage.removeItem(KEY_STORE); } catch (e) { /* ignore */ }
@@ -224,16 +225,17 @@
   function selectTab(name) {
     if (can[name] && !can[name]()) name = "bookings";
     document.querySelectorAll("#tabs button").forEach((x) => x.classList.toggle("on", x.dataset.t === name));
-    ["bookings", "hours", "settings", "team"].forEach((t) => { $("tab-" + t).hidden = t !== name; });
+    ["bookings", "money", "hours", "settings", "team"].forEach((t) => { $("tab-" + t).hidden = t !== name; });
+    if (name === "money" && window.StudioMoney) { window.StudioMoney.render(); window.StudioMoney.load(true); }
     $("fab").hidden = name !== "bookings"; window.scrollTo(0, 0);
   }
   $("tabs").addEventListener("click", (e) => { const b = e.target.closest("button[data-t]"); if (b) selectTab(b.dataset.t); });
 
   /* ---------- roles ---------- */
-  const can = { hours: () => S.me && S.me.role !== "Staff", settings: () => S.me && S.me.role !== "Staff", team: () => S.me && S.me.role === "Owner", bookings: () => true };
+  const can = { money: () => S.me && S.me.role !== "Staff", hours: () => S.me && S.me.role !== "Staff", settings: () => S.me && S.me.role !== "Staff", team: () => S.me && S.me.role === "Owner", bookings: () => true };
   function applyRole() {
     $("who").textContent = S.me ? (S.me.role === "Owner" && !W ? "Owner" : S.me.name + " · " + S.me.role) : "";
-    $("tab-hours-btn").hidden = !can.hours(); $("tab-settings-btn").hidden = !can.settings(); $("tab-team-btn").hidden = !can.team();
+    $("tab-money-btn").hidden = !can.money(); $("tab-hours-btn").hidden = !can.hours(); $("tab-settings-btn").hidden = !can.settings(); $("tab-team-btn").hidden = !can.team();
     const cur = document.querySelector("#tabs button.on");
     if (cur && cur.hidden) selectTab("bookings");
   }
@@ -335,10 +337,14 @@
   function renderBookings() {
     const pend = S.bookings.filter((b) => b.status === "Pending" && b.date >= ymd(new Date())).length;
     $("pend-count").hidden = !pend; $("pend-count").textContent = pend;
+    const t0 = ymd(new Date()), t30 = new Date(); t30.setDate(t30.getDate() + 29); const t30s = ymd(t30);
+    const live = S.bookings.filter((b) => b.status !== "Cancelled");
+    $("bk-stats").innerHTML = [["Today", live.filter((b) => b.date === t0).length], ["Next 30 days", live.filter((b) => b.date >= t0 && b.date <= t30s).length], ["Pending", pend]].map((x) => '<div class="stat"><small>' + x[0] + "</small><b>" + x[1] + "</b></div>").join("");
     document.querySelectorAll("#filters button").forEach((b) => b.classList.toggle("on", b.dataset.f === S.filter));
     const rows = visible();
-    if (!rows.length) { $("list").innerHTML = '<div class="empty">' + ({ upcoming: "No upcoming bookings.", pending: "Nothing waiting for you to confirm.", past: "No past bookings.", cancelled: "No cancelled bookings." })[S.filter] + "</div>"; return; }
+    if (!rows.length) { $("list").innerHTML = (S.truncated && !S.all && (S.filter === "past" || S.filter === "cancelled") ? '<button type="button" class="btn block older" data-older>Load older bookings</button>' : "") + '<div class="empty">' + ({ upcoming: "No upcoming bookings.", pending: "Nothing waiting for you to confirm.", past: "No past bookings.", cancelled: "No cancelled bookings." })[S.filter] + "</div>"; return; }
     let html = "", last = "";
+    const older = S.truncated && !S.all && (S.filter === "past" || S.filter === "cancelled") ? '<button type="button" class="btn block older" data-older>Load older bookings</button>' : "";
     rows.forEach((b) => {
       if (b.date !== last) { last = b.date; html += '<div class="day-h">' + esc(dayLabel(b.date)) + "</div>"; }
       const open = S.open === b.row;
@@ -349,7 +355,7 @@
       if (open) html += details(b);
       html += "</article>";
     });
-    $("list").innerHTML = html;
+    $("list").innerHTML = html + older;
   }
   function details(b) {
     const rows = [["When", dayLabel(b.date) + ", " + t12(b.start) + " to " + t12(b.end)], ["Package", b.pkg + (b.price ? " · " + money(b.price) : "")]];
@@ -367,22 +373,41 @@
     if (b.status === "Confirmed") acts += '<button type="button" class="btn sm" data-set="Pending">Mark pending</button>';
     if (b.status !== "Cancelled") acts += '<button type="button" class="btn sm bad" data-set="Cancelled">Cancel booking</button>';
     else acts += '<button type="button" class="btn sm" data-set="Pending">Restore as pending</button>';
+    if (b.email && b.status !== "Cancelled") acts += '<button type="button" class="btn sm" data-remind>Send reminder to client</button>';
     let contact = "";
     if (b.phone) contact += '<a class="btn sm" href="tel:' + esc(b.phone.replace(/[^\d+]/g, "")) + '">Call</a><a class="btn sm" target="_blank" rel="noopener" href="https://wa.me/' + waNumber(b.phone) + '">WhatsApp</a>';
-    return '<div class="bk-body"><dl>' + dl + '</dl><div class="acts">' + acts + '</div><div class="acts">' + contact + "</div></div>";
+    return '<div class="bk-body"><dl>' + dl + '</dl><div class="acts">' + acts + '</div>' + (b.email && b.status === "Confirmed" ? '<p class="muted small">The client is also reminded automatically the day before.</p>' : "") + '<div class="acts">' + contact + "</div></div>";
   }
   $("filters").addEventListener("click", (e) => { const b = e.target.closest("button[data-f]"); if (!b) return; S.filter = b.dataset.f; S.open = null; renderBookings(); });
+  function cancelDialog(b) {
+    const M = window.StudioMoney, m = M.modal(M.head("Cancel this booking?") + "<p>" + esc(b.name) + "'s time will open up again for other clients.</p>" +
+      '<label>Comment <span class="muted">(optional)</span><textarea id="cx-note" rows="3"></textarea></label><p class="muted small">' + (b.email ? "Included in the cancellation email to the client." : "Saved in the booking's notes.") + '</p>' +
+      '<div class="stack"><button class="btn bad block" id="cx-go" type="button">Cancel booking</button><button class="btn block" data-x type="button">Keep it</button></div>');
+    m.q("#cx-go").addEventListener("click", (e) => M.savedBusy(e.target, "Cancelling…", async () => {
+      const j = await api("admin_status", { row: b.row, status: "Cancelled", comment: m.q("#cx-note").value.trim() });
+      if (j.ok) { m.close(); toast("Booking cancelled" + (j.voided ? " and its invoice was voided" : "") + (j.kept ? ". Its invoice has payments, so it was left as is." : "")); S.open = null; await load(true); if (window.StudioMoney) window.StudioMoney.load(true); }
+      else toast("Couldn't update that booking.", true);
+    }));
+  }
   $("list").addEventListener("click", async (e) => {
+    if (e.target.closest("[data-older]")) { S.all = true; await load(true); return; }
     const art = e.target.closest(".bk"); if (!art) return;
     const row = +art.dataset.row;
     if (e.target.closest("[data-toggle]")) { S.open = S.open === row ? null : row; renderBookings(); return; }
+    const rem = e.target.closest("[data-remind]");
+    if (rem) {
+      rem.disabled = true;
+      try { const j = await api("admin_remind_booking", { row }); toast(j.ok ? "Reminder sent to the client" : j.error === "no_email" ? "This booking has no email address." : "Couldn't send the reminder.", !j.ok); } catch (err) { fail(err); }
+      rem.disabled = false; return;
+    }
     const set = e.target.closest("[data-set]"); if (!set) return;
     const status = set.dataset.set, b = S.bookings.find((x) => x.row === row);
-    if (status === "Cancelled" && !confirm("Cancel " + b.name + "'s booking? The time will open up again for other clients.")) return;
+    if (status === "Confirmed" && isManager() && window.StudioMoney) { if (!window.StudioMoney.state.loaded) await window.StudioMoney.load(true); window.StudioMoney.confirmDialog(b); return; }
+    if (status === "Cancelled") { cancelDialog(b); return; }
     set.disabled = true; set.textContent = "Saving…";
     try {
       const j = await api("admin_status", { row, status });
-      if (j.ok) { b.status = status; toast(status === "Cancelled" ? "Booking cancelled" : "Marked " + status.toLowerCase()); }
+      if (j.ok) { b.status = status; toast("Marked " + status.toLowerCase()); }
       else toast("Couldn't update that booking.", true);
     } catch (err) { fail(err); }
     S.open = null; await load(true);
@@ -504,6 +529,43 @@
     } catch (x) { fail(x); }
     btn.disabled = false; btn.textContent = "Add booking";
   });
+
+  /* ---------- desktop notifications for new bookings (while this page is open) ---------- */
+  let seen = null;
+  function notifyNew() {
+    const rows = new Set(S.bookings.map((b) => b.row));
+    if (seen && "Notification" in window && Notification.permission === "granted") {
+      S.bookings.filter((b) => !seen.has(b.row) && b.source !== "Admin app" && b.status !== "Cancelled").slice(0, 5).forEach((b) => {
+        try { new Notification("New booking: " + b.name, { body: [b.pkg, dayLabel(b.date) + " " + t12(b.start)].filter(Boolean).join(" · "), tag: "bk" + b.row }); } catch (e) { /* ignore */ }
+      });
+    }
+    seen = rows;
+  }
+  $("notif").addEventListener("click", async () => {
+    if (!("Notification" in window)) return;
+    const p = Notification.permission === "granted" ? "granted" : await Notification.requestPermission();
+    if (p === "granted") { try { new Notification("Notifications are working", { body: "You'll be alerted about new bookings while this page is open." }); } catch (e) { /* ignore */ } toast("Notifications are on while this page is open."); }
+    else toast("Notifications are blocked. Allow them in your browser's site settings.", true);
+  });
+
+  /* ----- change username ----- */
+  $("chun").addEventListener("click", () => {
+    const M = window.StudioMoney, m = M.modal(M.head("Change username") + '<label>New username<input id="un-new" type="text" maxlength="30" autocapitalize="none" spellcheck="false"></label><p class="muted small">3 to 30 letters, numbers, dots, dashes or underscores. Your password stays the same.</p><p class="err" id="un-err"></p><button class="btn primary block" id="un-go" type="button">Save</button>');
+    m.q("#un-new").value = CRED ? CRED.u : "";
+    m.q("#un-go").addEventListener("click", (e) => M.savedBusy(e.target, "Saving…", async () => {
+      const nu = m.q("#un-new").value.trim().toLowerCase();
+      if (!/^[a-z0-9._-]{3,30}$/.test(nu)) { m.q("#un-err").textContent = "Use 3 to 30 letters, numbers, dots, dashes or underscores."; return; }
+      const r = await wpost("/unset", { u: CRED.u, hash: CRED.hash, username: nu });
+      if (r.j.ok) { CRED.u = r.j.username || nu; m.close(); toast("Username changed to " + CRED.u); }
+      else if (r.status === 409) m.q("#un-err").textContent = "That username is taken.";
+      else if (r.status === 401) signOut("Your sign-in is no longer valid. Please sign in again.");
+      else m.q("#un-err").textContent = "Couldn't change it. Try again.";
+    }));
+  });
+
+  /* ---------- accounting + extras (money.js) ---------- */
+  if (window.StudioMoney) window.StudioMoney.init({ api, S, toast, esc, ymd, parseYmd, fail, reload: () => load(true) });
+  const isManager = () => S.me && S.me.role !== "Staff";
 
   /* ---------- start ---------- */
   // Home-screen shortcuts (long-press the app icon): ?view=pending, ?tab=hours, ?add=1
