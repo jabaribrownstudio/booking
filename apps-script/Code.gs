@@ -20,7 +20,7 @@ var CONFIG = {
   // ---- Admin app (your phone) ----
   // A long secret only you know (20+ letters/numbers). You type it into the admin app once.
   // Leave as is to switch the admin app off.
-  ADMIN_KEY: "change-this-to-a-long-secret",
+  ADMIN_KEY: "!nz]]|=>D#Z|Y9-QIb4H=4VI9F4Z(@",
 
   // ---- Google Calendar ----
   CALENDAR_ID: "primary",           // "primary" = your main calendar, or paste a calendar ID. "" turns calendar off
