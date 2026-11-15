@@ -56,6 +56,18 @@ object Net {
             try { request(url, body.toString(), contentType) } catch (e: java.io.IOException) { throw NetworkError() }
         }
 
+    /** A plain GET returning the body text, or null if it fails. */
+    suspend fun get(url: String): String? = withContext(Dispatchers.IO) {
+        try {
+            val c = open(url)
+            c.requestMethod = "GET"
+            c.setRequestProperty("Accept", "application/vnd.github+json")
+            val text = if (c.responseCode in 200..299) c.inputStream.bufferedReader().use { it.readText() } else null
+            c.disconnect()
+            text
+        } catch (e: Exception) { null }
+    }
+
     /** The Cloudflare Worker: plain JSON. */
     suspend fun worker(base: String, path: String, body: JSONObject): ApiResult =
         call(base.trimEnd('/') + path, body, "application/json")

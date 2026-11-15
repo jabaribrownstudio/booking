@@ -12,8 +12,10 @@ android {
         applicationId = "com.jabaribrownstudio.admin"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        // CI passes the build number so the app can tell when a newer one is published.
+        val build = (System.getenv("APP_BUILD") ?: "1").toIntOrNull() ?: 1
+        versionCode = build
+        versionName = "1.$build"
     }
 
     signingConfigs {

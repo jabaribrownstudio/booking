@@ -44,7 +44,21 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
 
     private var lastLoad = 0L
 
+    /** Set when a newer build of the app has been published. */
+    var updateAvailable by mutableStateOf(false)
+    val releasePage = "https://github.com/jabaribrownstudio/booking/releases/tag/android-latest"
+
+    private fun checkUpdate() {
+        viewModelScope.launch {
+            val body = Net.get("https://api.github.com/repos/jabaribrownstudio/booking/releases/tags/android-latest") ?: return@launch
+            val latest = try { Regex("Build (\\d+)").find(JSONObject(body).optString("body"))?.groupValues?.get(1)?.toIntOrNull() } catch (e: Exception) { null } ?: return@launch
+            val mine = try { app.packageManager.getPackageInfo(app.packageName, 0).longVersionCode } catch (e: Exception) { Long.MAX_VALUE }
+            if (latest > mine) updateAvailable = true
+        }
+    }
+
     init {
+        checkUpdate()
         if (store.signedIn) {
             // Show what we had last time straight away, then refresh quietly.
             store.getCache("list")?.let { try { val d = parseAdminData(JSONObject(it)); data = d; hoursDraft = d.hours } catch (e: Exception) { } }

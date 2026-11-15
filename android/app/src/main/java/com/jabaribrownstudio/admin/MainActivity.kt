@@ -26,6 +26,18 @@ class MainActivity : ComponentActivity() {
                         vm.mustChange -> ChangePasswordScreen(vm)
                         else -> HomeScreen(vm)
                     }
+                    if (vm.updateAvailable) androidx.compose.material3.AlertDialog(
+                        onDismissRequest = { vm.updateAvailable = false },
+                        title = { androidx.compose.material3.Text("Update available") },
+                        text = { androidx.compose.material3.Text("A newer version of JB Studio Admin is ready. Open the download page to get it, then install it over this one.") },
+                        confirmButton = {
+                            androidx.compose.material3.TextButton(onClick = {
+                                vm.updateAvailable = false
+                                try { startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(vm.releasePage))) } catch (e: Exception) { }
+                            }) { androidx.compose.material3.Text("Update") }
+                        },
+                        dismissButton = { androidx.compose.material3.TextButton(onClick = { vm.updateAvailable = false }) { androidx.compose.material3.Text("Later") } }
+                    )
                 }
             }
         }

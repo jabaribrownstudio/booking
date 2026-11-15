@@ -75,6 +75,7 @@ fun InvoicesTab(vm: MainViewModel, pad: PaddingValues) {
     var itemDialog by remember { mutableStateOf<Fee?>(null) }
     var newItem by remember { mutableStateOf(false) }
     var taxDialog by remember { mutableStateOf(false) }
+    var taxToRemove by remember { mutableStateOf<SavedTax?>(null) }
     var editing by remember { mutableStateOf<Invoice?>(null) }
     var creating by remember { mutableStateOf<String?>(null) }
     var viewing by remember { mutableIntStateOf(-1) }
@@ -134,7 +135,7 @@ fun InvoicesTab(vm: MainViewModel, pad: PaddingValues) {
                             Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(MaterialTheme.colorScheme.surface).padding(start = 16.dp, top = 6.dp, bottom = 6.dp, end = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Text(t.name, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
                                 Text(num(t.rate) + "%")
-                                IconButton(onClick = { vm.removeTax(t.row) }) { Icon(Icons.Outlined.Close, "Remove tax") }
+                                IconButton(onClick = { taxToRemove = t }) { Icon(Icons.Outlined.Close, "Remove tax") }
                             }
                         }
                         item { OutlinedButton(onClick = { taxDialog = true }, modifier = Modifier.fillMaxWidth()) { Text("+ Add a tax") } }
@@ -193,6 +194,14 @@ fun InvoicesTab(vm: MainViewModel, pad: PaddingValues) {
     if (editing != null) InvoiceEditor(vm, editing, editing!!.type) { editing = null }
     if (newItem || itemDialog != null) ItemDialog(vm, itemDialog) { newItem = false; itemDialog = null }
     if (taxDialog) TaxDialog(vm) { taxDialog = false }
+    taxToRemove?.let { t ->
+        AlertDialog(
+            onDismissRequest = { taxToRemove = null },
+            title = { Text("Delete ${t.name}?") }, text = { Text("It will be removed from your saved taxes. Invoices that already use it are not changed.") },
+            confirmButton = { TextButton(onClick = { taxToRemove = null; vm.removeTax(t.row) }, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) { Text("Delete") } },
+            dismissButton = { TextButton(onClick = { taxToRemove = null }) { Text("Keep") } }
+        )
+    }
 }
 
 @Composable
@@ -366,6 +375,14 @@ private fun ItemDialog(vm: MainViewModel, f: Fee?, onDismiss: () -> Unit) {
     var desc by remember(f) { mutableStateOf(f?.desc ?: "") }
     var price by remember(f) { mutableStateOf(f?.let { num(it.price) } ?: "") }
     var qty by remember(f) { mutableStateOf(f?.let { num(it.qty) } ?: "1") }
+    var confirmDelete by remember { mutableStateOf(false) }
+    if (confirmDelete && f != null) AlertDialog(
+        onDismissRequest = { confirmDelete = false },
+        title = { Text("Delete ${f.name}?") },
+        text = { Text("It will be removed from your Products & Services. Invoices that already use it are not changed.") },
+        confirmButton = { TextButton(onClick = { confirmDelete = false; vm.removeFee(f.row); onDismiss() }, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) { Text("Delete") } },
+        dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Keep") } }
+    )
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (f == null) "New Product or Service" else "Edit Product or Service") },
@@ -391,7 +408,7 @@ private fun ItemDialog(vm: MainViewModel, f: Fee?, onDismiss: () -> Unit) {
         },
         dismissButton = {
             Row {
-                if (f != null) TextButton(onClick = { vm.removeFee(f.row); onDismiss() }, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) { Text("Delete") }
+                if (f != null) TextButton(onClick = { confirmDelete = true }, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) { Text("Delete") }
                 TextButton(onClick = onDismiss) { Text("Cancel") }
             }
         }
