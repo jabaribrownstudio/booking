@@ -610,6 +610,7 @@ fun ConfirmBookingDialog(vm: MainViewModel, b: Booking, onDismiss: () -> Unit) {
     val fees = vm.money?.fees ?: emptyList()
     val picked = remember { androidx.compose.runtime.mutableStateMapOf<Int, String>() }
     val custom = remember { mutableStateListOf<EditLine>() }
+    var pickItem by remember { mutableStateOf(false) }
     var send by remember { mutableStateOf(b.email.isNotBlank()) }
     val base = bookingPrice(b)
     var discType by remember { mutableStateOf("percent") }
@@ -626,14 +627,15 @@ fun ConfirmBookingDialog(vm: MainViewModel, b: Booking, onDismiss: () -> Unit) {
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Row { Text(b.pkg.ifBlank { "Session" }, Modifier.weight(1f)); Text(Fmt.cash(base)) }
-                Text("Add to the invoice (set the quantity of each item)", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 10.dp))
-                fees.forEach { f ->
-                    Row(Modifier.fillMaxWidth().clickable { if (f.row in picked) picked.remove(f.row) else picked[f.row] = num(f.qty) }, verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(checked = f.row in picked, onCheckedChange = { if (it) picked[f.row] = num(f.qty) else picked.remove(f.row) })
-                        Text(f.name, Modifier.weight(1f)); Text(Fmt.cash(f.price))
+                Text("Add to the invoice", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 10.dp))
+                fees.filter { it.row in picked }.forEach { f ->
+                    Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Column(Modifier.weight(1f)) { Text(f.name); Text(Fmt.cash(f.price), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                        OutlinedTextField(picked[f.row] ?: "1", { picked[f.row] = it.filter { c -> c.isDigit() || c == '.' } }, label = { Text("Qty") }, singleLine = true, modifier = Modifier.width(84.dp), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
+                        IconButton(onClick = { picked.remove(f.row) }, modifier = Modifier.size(32.dp)) { Icon(Icons.Outlined.Close, "Remove item", Modifier.size(16.dp)) }
                     }
-                    if (f.row in picked) OutlinedTextField(picked[f.row] ?: "1", { picked[f.row] = it.filter { c -> c.isDigit() || c == '.' } }, label = { Text("Quantity") }, singleLine = true, modifier = Modifier.padding(start = 48.dp).fillMaxWidth(0.5f), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
                 }
+                OutlinedButton(onClick = { pickItem = true }, modifier = Modifier.fillMaxWidth().padding(top = 6.dp)) { Text("+ Add from Products & Services") }
                 custom.forEachIndexed { i, l ->
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 4.dp)) {
                         OutlinedTextField(l.name, { l.name = it }, label = { Text("Item") }, singleLine = true, modifier = Modifier.weight(1.3f))
@@ -642,7 +644,7 @@ fun ConfirmBookingDialog(vm: MainViewModel, b: Booking, onDismiss: () -> Unit) {
                         IconButton(onClick = { custom.removeAt(i) }, modifier = Modifier.size(32.dp)) { Icon(Icons.Outlined.Close, "Remove item", Modifier.size(16.dp)) }
                     }
                 }
-                TextButton(onClick = { custom.add(EditLine("", "", "1", "")) }) { Text("+ Add another item") }
+                OutlinedButton(onClick = { custom.add(EditLine("", "", "1", "")) }, modifier = Modifier.fillMaxWidth()) { Text("+ Add a custom item") }
                 AdjustFields(vm.money?.taxes ?: emptyList(), discType, { discType = it }, discValue, { discValue = it }, taxes)
                 HorizontalDivider(Modifier.padding(vertical = 6.dp))
                 Row { Text("Invoice total", Modifier.weight(1f), fontWeight = FontWeight.Bold); Text(Fmt.cash(total), fontWeight = FontWeight.Bold) }
@@ -653,19 +655,37 @@ fun ConfirmBookingDialog(vm: MainViewModel, b: Booking, onDismiss: () -> Unit) {
             }
         },
         confirmButton = {
-            Column(horizontalAlignment = Alignment.End) {
-            TextButton(onClick = {
-                onDismiss(); vm.setStatus(b.row, "Confirmed", noInvoice = true)
-            }) { Text(if (b.email.isNotBlank()) "Confirm, email only (invoice later)" else "Confirm without invoice") }
-            TextButton(onClick = {
-                val extras = fees.filter { it.row in picked }.map { LineItem(it.name, it.desc, picked[it.row]?.toDoubleOrNull()?.takeIf { q -> q > 0 } ?: it.qty, it.price) } +
-                    custom.filter { it.name.isNotBlank() }.map { LineItem(it.name.trim(), "", it.qty.toDoubleOrNull()?.takeIf { q -> q > 0 } ?: 1.0, it.price.toDoubleOrNull() ?: 0.0) }
-                onDismiss(); vm.setStatus(b.row, "Confirmed", extras, send && b.email.isNotBlank(), discount = discountOf(discType, discValue), taxes = taxesOf(taxes))
-            }) { Text("Confirm and invoice") }
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Button(onClick = {
+                    val extras = fees.filter { it.row in picked }.map { LineItem(it.name, it.desc, picked[it.row]?.toDoubleOrNull()?.takeIf { q -> q > 0 } ?: it.qty, it.price) } +
+                        custom.filter { it.name.isNotBlank() }.map { LineItem(it.name.trim(), "", it.qty.toDoubleOrNull()?.takeIf { q -> q > 0 } ?: 1.0, it.price.toDoubleOrNull() ?: 0.0) }
+                    onDismiss(); vm.setStatus(b.row, "Confirmed", extras, send && b.email.isNotBlank(), discount = discountOf(discType, discValue), taxes = taxesOf(taxes))
+                }, modifier = Modifier.fillMaxWidth().height(48.dp)) { Text("Confirm and invoice") }
+                androidx.compose.material3.FilledTonalButton(onClick = {
+                    onDismiss(); vm.setStatus(b.row, "Confirmed", noInvoice = true)
+                }, modifier = Modifier.fillMaxWidth().height(48.dp)) { Text(if (b.email.isNotBlank()) "Confirm, email only (invoice later)" else "Confirm without invoice") }
+                OutlinedButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth().height(48.dp)) { Text("Cancel") }
             }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+        dismissButton = null
     )
+    if (pickItem) {
+        AlertDialog(
+            onDismissRequest = { pickItem = false }, title = { Text("Products & Services") },
+            text = {
+                LazyColumn {
+                    if (fees.isEmpty()) item { Text("Nothing saved yet. Add items under Accounting → Products & Services.") }
+                    items(fees) { f ->
+                        Row(Modifier.fillMaxWidth().clickable { if (f.row in picked) picked.remove(f.row) else picked[f.row] = num(f.qty) }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(checked = f.row in picked, onCheckedChange = { if (it) picked[f.row] = num(f.qty) else picked.remove(f.row) })
+                            Text(f.name, Modifier.weight(1f)); Text(Fmt.cash(f.price))
+                        }
+                    }
+                }
+            },
+            confirmButton = { Button(onClick = { pickItem = false }) { Text("Done") } }
+        )
+    }
 }
 
 private fun m0(vm: MainViewModel, inv: Invoice): Invoice? = vm.money?.invoices?.firstOrNull { it.isInvoice && it.from == inv.number }
