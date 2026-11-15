@@ -711,10 +711,10 @@ var INV_HEADERS = ["Number", "Type", "Status", "Date", "Due / valid until", "Cli
 
 // What each package says on its invoice line. Keep in step with js/config.js.
 var PACKAGE_DETAILS = {
-  "bronze": { title: "BRONZE Package", lines: ["Duration: 30 minutes", "10 Retouched Images", "1 Outfit", "1 Location (within the corporate area)"] },
-  "silver": { title: "SILVER Package", lines: ["Duration: 1 hour", "15 Retouched Images", "2 Outfits", "1 Location (within the corporate area)"] },
-  "gold": { title: "GOLD Package", lines: ["Duration: 2 hours", "25 Retouched Images", "2 Outfits", "2 Locations (within the corporate area)"] },
-  "professional headshot": { title: "Professional Headshot", lines: ["Duration: 20 minutes", "5 Retouched Images", "1 Outfit", "1 Studio Setup"] }
+  "bronze": { price: 15000, title: "BRONZE Package", lines: ["Duration: 30 minutes", "10 Retouched Images", "1 Outfit", "1 Location (within the corporate area)"] },
+  "silver": { price: 22000, title: "SILVER Package", lines: ["Duration: 1 hour", "15 Retouched Images", "2 Outfits", "1 Location (within the corporate area)"] },
+  "gold": { price: 37000, title: "GOLD Package", lines: ["Duration: 2 hours", "25 Retouched Images", "2 Outfits", "2 Locations (within the corporate area)"] },
+  "professional headshot": { price: 7500, title: "Professional Headshot", lines: ["Duration: 20 minutes", "5 Retouched Images", "1 Outfit", "1 Studio Setup"] }
 };
 
 var MONEY_ACTIONS = { admin_fee_update: 1, admin_tax_add: 1, admin_tax_remove: 1, admin_inv_receipt: 1, admin_money: 1, admin_inv_save: 1, admin_inv_send: 1, admin_inv_pay: 1, admin_inv_unpay: 1, admin_inv_status: 1,
@@ -1110,6 +1110,20 @@ function finance_(year, all) {
     years: Object.keys(years).map(Number).sort(function (a, b) { return b - a; }) };
 }
 
+/** Once: puts your booking packages into Products & Services so they can be dropped into invoices. Skips any that are already there. */
+function seedPackages_() {
+  var props = PropertiesService.getScriptProperties();
+  if (props.getProperty("packagesSeeded")) return;
+  var sh = feesSheet_(), have = {};
+  feesList_().forEach(function (f) { have[f.name.toLowerCase()] = 1; });
+  ["bronze", "silver", "gold", "professional headshot"].forEach(function (k) {
+    var p = PACKAGE_DETAILS[k];
+    if (have[p.title.toLowerCase()]) return;
+    sh.getRange(Math.max(sh.getLastRow() + 1, 2), 1, 1, 4).setValues([[p.title, p.lines.join("\n"), p.price, 1]]);
+  });
+  props.setProperty("packagesSeeded", "1");
+}
+
 function taxesList_() {
   return rows_(TAB_TAXES, 2).map(function (r, i) { return { row: i + 2, name: String(r.d[0]), rate: +r.v[1] || 0 }; }).filter(function (t) { return t.name; });
 }
@@ -1123,6 +1137,7 @@ function feesList_() {
 function moneyApi_(d) {
   switch (d.action) {
     case "admin_money": {
+      try { seedPackages_(); } catch (se) { console.error("seed: " + se); }
       var year = parseInt(d.year, 10) || +todayStr_().slice(0, 4);
       var all = readInv_().sort(function (a, b) { return a.date < b.date ? 1 : a.date > b.date ? -1 : b.number - a.number; });
       return { ok: true, invoices: all, fees: feesList_(), taxes: taxesList_(), finance: finance_(year, all), currency: CONFIG.CURRENCY_SYMBOL };

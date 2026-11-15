@@ -521,7 +521,6 @@ private fun InvoiceEditor(vm: MainViewModel, existing: Invoice?, type: String, o
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 item { AssistChip(onClick = { lines.add(EditLine("", "", "1", "")) }, label = { Text("+ Custom item") }) }
                 items(fees) { f -> AssistChip(onClick = { lines.add(EditLine(f.name, f.desc, num(f.qty), num(f.price))) }, label = { Text("+ " + f.name) }) }
-                items(AppConfig.PACKAGES) { p -> AssistChip(onClick = { lines.add(EditLine(p.name, "", "1", p.price.toString())) }, label = { Text("+ " + p.name) }) }
             }
             OutlinedButton(onClick = { pickItem = true }, modifier = Modifier.fillMaxWidth()) { Text("Add a Product or Service") }
             AdjustFields(vm.money?.taxes ?: emptyList(), discType, { discType = it }, discValue, { discValue = it }, taxes)
@@ -553,11 +552,6 @@ private fun InvoiceEditor(vm: MainViewModel, existing: Invoice?, type: String, o
                         Row(Modifier.fillMaxWidth().clickable { lines.add(EditLine(f.name, f.desc, num(f.qty), num(f.price))); pickItem = false }.padding(vertical = 10.dp)) {
                             Column(Modifier.weight(1f)) { Text(f.name, fontWeight = FontWeight.SemiBold); if (f.desc.isNotBlank()) Text(f.desc, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1) }
                             Text(Fmt.cash(f.price) + if (f.qty != 1.0) " × " + num(f.qty) else "")
-                        }
-                    }
-                    items(AppConfig.PACKAGES) { p ->
-                        Row(Modifier.fillMaxWidth().clickable { lines.add(EditLine(p.name, "", "1", p.price.toString())); pickItem = false }.padding(vertical = 10.dp)) {
-                            Text(p.name + " package", Modifier.weight(1f), fontWeight = FontWeight.SemiBold); Text(Fmt.cash(p.price.toDouble()))
                         }
                     }
                 }
