@@ -340,12 +340,13 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun convertEstimate(row: Int) {
+    /** Makes an invoice from an estimate. onDone gets the new invoice's row. */
+    fun convertEstimate(row: Int, onDone: (Int) -> Unit = {}) {
         viewModelScope.launch {
             busy = true
             val r = act("admin_inv_convert", JSONObject().put("row", row))
             busy = false
-            moneyDone(r, "Invoice #" + (r?.json?.optInt("number") ?: 0) + " created", "Couldn't convert it.")
+            if (moneyDone(r, "Invoice #" + (r?.json?.optInt("number") ?: 0) + " created", "Couldn't convert it.")) onDone(r?.json?.optInt("row") ?: -1)
         }
     }
 

@@ -705,7 +705,7 @@ function adminApi_(d) {
 
 /* ---------- invoices, estimates and money tracking ---------- */
 
-var TAB_INV = "Invoices", TAB_FEES = "Products & services", TAB_TAXES = "Taxes";
+var TAB_INV = "Invoices", TAB_FEES = "Products & Services", TAB_TAXES = "Taxes";
 var INV_HEADERS = ["Number", "Type", "Status", "Date", "Due / valid until", "Client", "Email", "Phone", "Booking row",
                    "Items (JSON)", "Total", "Paid", "Payments (JSON)", "Notes", "Created", "Sent", "From estimate", "Discount (JSON)", "Taxes (JSON)"];
 
@@ -769,7 +769,7 @@ function taxesSheet_() {
 
 function feesSheet_() {
   var ss = SpreadsheetApp.getActiveSpreadsheet(), sh = ss.getSheetByName(TAB_FEES);
-  if (!sh) { sh = ss.getSheetByName("Fees"); if (sh) sh.setName(TAB_FEES); } // the tab used to be called Fees
+  if (!sh) { sh = ss.getSheetByName("Products & services") || ss.getSheetByName("Fees"); if (sh) sh.setName(TAB_FEES); } // older names of this tab
   if (sh) {
     if (String(sh.getRange(1, 4).getValue()) !== "Quantity") sh.getRange(1, 1, 1, 4).setValues([["Item", "Description (optional)", "Price", "Quantity"]]).setFontWeight("bold");
     return sh;
