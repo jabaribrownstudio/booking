@@ -215,3 +215,11 @@ a.btn { display: inline-flex; align-items: center; justify-content: center; text
 .cq { margin: 10px 0 8px; max-width: 420px; }
 input[type=search] { width: 100%; min-height: 46px; padding: 10px 12px; border: 1.5px solid var(--line); border-radius: 12px; background: var(--card); font-size: 16px; }
 .sheet.dyn a { color: inherit; font-weight: 600; }
+
+#money-root .seg { display: grid; grid-template-columns: repeat(4, 1fr); overflow: visible; }
+#money-root .seg button { padding: 0 4px; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 13px; }
+#money-root .stats { gap: 8px; margin-bottom: 10px; }
+#money-root .stat { padding: 8px 10px; }
+#money-root .stat b { font-size: 16px; }
+#money-root .bars { height: 48px; }
+#money-root .card { padding: 10px 12px; }

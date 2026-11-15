@@ -105,11 +105,11 @@ fun InvoicesTab(vm: MainViewModel, pad: PaddingValues) {
                 } else {
                     item { Summary(vm, m.finance) }
                     item {
-                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(0.dp)) {
-                            FilterChip(selected = section == "Invoices", onClick = { section = "Invoices" }, label = { Text("Invoices") })
-                            FilterChip(selected = section == "Estimates", onClick = { section = "Estimates" }, label = { Text("Estimates") })
-                            FilterChip(selected = section == "Items", onClick = { section = "Items" }, label = { Text("Products & Services") })
-                            FilterChip(selected = section == "Clients", onClick = { section = "Clients" }, label = { Text("Clients") })
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            listOf("Invoices" to "Invoices", "Estimates" to "Estimates", "Items" to "Services", "Clients" to "Clients").forEach { (k, l) ->
+                                FilterChip(selected = section == k, onClick = { section = k }, modifier = Modifier.weight(1f),
+                                    label = { Text(l, Modifier.fillMaxWidth(), maxLines = 1, textAlign = androidx.compose.ui.text.style.TextAlign.Center) })
+                            }
                         }
                     }
                     if (section == "Clients") {
@@ -226,7 +226,7 @@ fun InvoicesTab(vm: MainViewModel, pad: PaddingValues) {
 
 @Composable
 private fun Summary(vm: MainViewModel, f: Finance) {
-    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(MaterialTheme.colorScheme.primary).padding(18.dp)) {
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(MaterialTheme.colorScheme.primary).padding(12.dp)) {
         val on = MaterialTheme.colorScheme.onPrimary
         LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             items(f.years) { y ->
@@ -238,10 +238,10 @@ private fun Summary(vm: MainViewModel, f: Finance) {
         }
         Spacer(Modifier.height(8.dp))
         Text("Collected in ${f.year}", color = on.copy(alpha = 0.75f), style = MaterialTheme.typography.labelLarge)
-        Text(Fmt.cash(f.collected), color = on, style = MaterialTheme.typography.headlineMedium)
-        Spacer(Modifier.height(14.dp))
+        Text(Fmt.cash(f.collected), color = on, style = MaterialTheme.typography.titleLarge)
+        Spacer(Modifier.height(8.dp))
         val max = (f.months.maxOrNull() ?: 0.0).coerceAtLeast(1.0)
-        Row(Modifier.fillMaxWidth().height(64.dp), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.Bottom) {
+        Row(Modifier.fillMaxWidth().height(36.dp), horizontalArrangement = Arrangement.spacedBy(3.dp), verticalAlignment = Alignment.Bottom) {
             f.months.forEach { v ->
                 Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.BottomCenter) {
                     Box(Modifier.fillMaxWidth().fillMaxHeight(((v / max).toFloat()).coerceIn(0.04f, 1f)).clip(RoundedCornerShape(4.dp)).background(on.copy(alpha = if (v > 0) 0.9f else 0.2f)))
@@ -251,7 +251,7 @@ private fun Summary(vm: MainViewModel, f: Finance) {
         Row(Modifier.fillMaxWidth().padding(top = 4.dp)) {
             listOf("J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D").forEach { Text(it, Modifier.weight(1f), color = on.copy(alpha = 0.7f), style = MaterialTheme.typography.labelSmall, textAlign = androidx.compose.ui.text.style.TextAlign.Center) }
         }
-        Spacer(Modifier.height(14.dp))
+        Spacer(Modifier.height(8.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Mini("Invoiced", f.invoiced, on, Modifier.weight(1f))
             Mini("Outstanding", f.outstanding, on, Modifier.weight(1f))
