@@ -142,7 +142,7 @@ fun BookingsTab(vm: MainViewModel, pad: PaddingValues) {
         }
         ExtendedFloatingActionButton(
             onClick = { showAdd = true },
-            icon = { Icon(Icons.Filled.Add, null) }, text = { Text("Add booking") },
+            icon = { Icon(Icons.Filled.Add, null) }, text = { Text("Add Booking") },
             containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary,
             modifier = Modifier.align(Alignment.BottomEnd).padding(20.dp)
         )

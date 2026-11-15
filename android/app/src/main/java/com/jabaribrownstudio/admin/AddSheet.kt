@@ -139,7 +139,7 @@ fun AddBookingSheet(vm: MainViewModel, onClose: () -> Unit) {
                     }
                 }
             ) {
-                if (vm.busy) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.5.dp, color = MaterialTheme.colorScheme.onPrimary) else Text("Add booking")
+                if (vm.busy) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.5.dp, color = MaterialTheme.colorScheme.onPrimary) else Text("Add Booking")
             }
             Spacer(Modifier.height(4.dp))
         }

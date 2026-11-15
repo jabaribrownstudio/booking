@@ -48,7 +48,7 @@ fun androidx.compose.foundation.lazy.LazyListScope.clientItems(vm: MainViewModel
     if (all == null) { item { Text(if (vm.clientsLoading) "Loading…" else "Pull down to load.", modifier = Modifier.padding(16.dp)) }; return }
     val q = query.trim().lowercase()
     val list = if (q.isEmpty()) all else all.filter { (it.name + " " + it.email + " " + it.phone).lowercase().contains(q) }
-    if (list.isEmpty()) item { Text(if (all.isEmpty()) "No clients yet. They're added automatically from bookings and invoices, or tap New → New client." else "No clients match that.", modifier = Modifier.padding(16.dp)) }
+    if (list.isEmpty()) item { Text(if (all.isEmpty()) "No clients yet. They're added automatically from bookings and invoices, or tap New → New Client." else "No clients match that.", modifier = Modifier.padding(16.dp)) }
     items(list, key = { "client" + it.row }) { c ->
         Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(MaterialTheme.colorScheme.surface).clickable { onOpen(c) }.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -103,7 +103,7 @@ fun ClientDetail(vm: MainViewModel, c: Client, onClose: () -> Unit, onEdit: () -
                     StatusChip(i.status)
                 }
             }
-            Button(onClick = onInvoice, modifier = Modifier.fillMaxWidth().height(48.dp).padding(top = 0.dp)) { Text("New invoice for ${c.name.substringBefore(' ')}") }
+            Button(onClick = onInvoice, modifier = Modifier.fillMaxWidth().height(48.dp).padding(top = 0.dp)) { Text("New Invoice for ${c.name.substringBefore(' ')}") }
             OutlinedButton(onClick = onEdit, modifier = Modifier.fillMaxWidth().height(48.dp)) { Text("Edit client") }
             TextButton(onClick = { confirmDelete = true }, modifier = Modifier.fillMaxWidth()) { Text("Delete client", color = MaterialTheme.colorScheme.error) }
         }
@@ -127,7 +127,7 @@ fun ClientDialog(vm: MainViewModel, existing: Client?, onClose: () -> Unit) {
     var err by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onClose,
-        title = { Text(if (existing == null) "New client" else "Edit client") },
+        title = { Text(if (existing == null) "New Client" else "Edit Client") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(name, { name = it }, label = { Text("Name") }, singleLine = true, modifier = Modifier.fillMaxWidth())

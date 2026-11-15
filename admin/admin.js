@@ -527,7 +527,7 @@
       else if (j.error === "slot_taken") { err.textContent = "That time overlaps another booking (or its buffer)."; $("a-force-row").hidden = false; }
       else err.textContent = j.error === "invalid_input" ? "Check the details. The email address may be wrong." : "Couldn't add the booking. Try again.";
     } catch (x) { fail(x); }
-    btn.disabled = false; btn.textContent = "Add booking";
+    btn.disabled = false; btn.textContent = "Add Booking";
   });
 
   /* ---------- desktop notifications for new bookings (while this page is open) ---------- */

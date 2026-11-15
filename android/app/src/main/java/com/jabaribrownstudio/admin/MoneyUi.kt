@@ -193,9 +193,9 @@ fun InvoicesTab(vm: MainViewModel, pad: PaddingValues) {
                 containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary
             )
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                DropdownMenuItem(text = { Text("New invoice") }, onClick = { menu = false; creating = "Invoice" })
-                DropdownMenuItem(text = { Text("New estimate") }, onClick = { menu = false; creating = "Estimate" })
-                DropdownMenuItem(text = { Text("New client") }, onClick = { menu = false; section = "Clients"; clientNew = true })
+                DropdownMenuItem(text = { Text("New Invoice") }, onClick = { menu = false; creating = "Invoice" })
+                DropdownMenuItem(text = { Text("New Estimate") }, onClick = { menu = false; creating = "Estimate" })
+                DropdownMenuItem(text = { Text("New Client") }, onClick = { menu = false; section = "Clients"; clientNew = true })
                 DropdownMenuItem(text = { Text("New Product or Service") }, onClick = { menu = false; section = "Items"; newItem = true })
             }
         }

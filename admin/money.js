@@ -93,7 +93,7 @@
     } catch (e) { A.fail(e); }
   }
   function clientsHtml() {
-    let h = '<div class="acts"><button type="button" class="btn primary" id="m-client-new">+ New client</button></div><label class="cq">Search clients<input id="m-cq" type="search" value="' + A.esc(M.cq) + '" placeholder="Name, email or phone"></label>';
+    let h = '<div class="acts"><button type="button" class="btn primary" id="m-client-new">+ New Client</button></div><label class="cq">Search clients<input id="m-cq" type="search" value="' + A.esc(M.cq) + '" placeholder="Name, email or phone"></label>';
     if (!M.clients) return h + '<div class="skeleton"></div>';
     const q = M.cq.trim().toLowerCase();
     const list = q ? M.clients.filter((c) => (c.name + " " + c.email + " " + c.phone).toLowerCase().indexOf(q) > -1) : M.clients;
@@ -102,7 +102,7 @@
       return '<button type="button" class="invrow" data-client="' + c.row + '"><div><b>' + A.esc(c.name) + "</b><small>" + A.esc([c.email, c.phone].filter(Boolean).join(" · ") || "No contact details") + (c.owing > 0.004 ? ' · <span class="bad-t">Owes ' + cash(c.owing) + "</span>" : "") + '</small></div><div class="r"><b>' + n + " booking" + (n === 1 ? "" : "s") + "</b>" + (c.billed ? "<small>" + cash(c.billed) + "</small>" : "") + "</div></button>"; }).join("") + "</div>";
   }
   function clientDialog(c) {
-    const m = modal(head(c ? "Edit client" : "New client") + '<label>Name<input id="cl-name" type="text" maxlength="100"></label><div class="grid2"><label>Email <span class="muted">(optional)</span><input id="cl-email" type="email" autocapitalize="none"></label><label>Phone <span class="muted">(optional)</span><input id="cl-phone" type="tel"></label></div><label>Instagram <span class="muted">(optional)</span><input id="cl-ig" type="text"></label><label>Notes <span class="muted">(optional)</span><textarea id="cl-notes" rows="3"></textarea></label><p class="err" id="cl-err"></p><button class="btn primary block" id="cl-save" type="button">Save</button>');
+    const m = modal(head(c ? "Edit Client" : "New Client") + '<label>Name<input id="cl-name" type="text" maxlength="100"></label><div class="grid2"><label>Email <span class="muted">(optional)</span><input id="cl-email" type="email" autocapitalize="none"></label><label>Phone <span class="muted">(optional)</span><input id="cl-phone" type="tel"></label></div><label>Instagram <span class="muted">(optional)</span><input id="cl-ig" type="text"></label><label>Notes <span class="muted">(optional)</span><textarea id="cl-notes" rows="3"></textarea></label><p class="err" id="cl-err"></p><button class="btn primary block" id="cl-save" type="button">Save</button>');
     m.q("#cl-name").value = c ? c.name : ""; m.q("#cl-email").value = c ? c.email : ""; m.q("#cl-phone").value = c ? c.phone : ""; m.q("#cl-ig").value = c ? c.instagram : ""; m.q("#cl-notes").value = c ? c.notes : "";
     m.q("#cl-save").addEventListener("click", (e) => savedBusy(e.target, "Saving…", async () => {
       const name = m.q("#cl-name").value.trim(); if (!name) { m.q("#cl-err").textContent = "Enter the client's name."; return; }
@@ -118,7 +118,7 @@
     h += '<div class="stats"><div class="stat"><small>Billed</small><b>' + cash(c.billed) + '</b></div><div class="stat"><small>Paid</small><b>' + cash(c.paid) + '</b></div><div class="stat' + (c.owing > 0.004 ? " bad" : "") + '"><small>Owing</small><b>' + cash(c.owing) + "</b></div></div>";
     h += '<b class="lbl">Bookings (' + c.bookings.length + ")</b>" + (c.bookings.length ? c.bookings.map((b) => '<div class="li"><span><b>' + A.esc(b.pkg || "Session") + "</b><small>" + fdate(b.date) + (b.start ? " · " + A.t12(b.start) : "") + '</small></span><span class="pill ' + A.esc(b.status) + '">' + A.esc(b.status) + "</span></div>").join("") : '<p class="muted">No bookings yet.</p>');
     h += '<b class="lbl">Invoices and estimates (' + c.invoices.length + ")</b>" + (c.invoices.length ? c.invoices.map((i) => '<button type="button" class="li linkrow" data-openinv="' + i.row + '"><span><b>' + (i.type === "Estimate" ? "Estimate #" : "Invoice #") + i.number + "</b><small>" + fdate(i.date) + " · " + cash(i.total) + '</small></span><span class="pill st-' + A.esc(i.status) + '">' + A.esc(i.status) + "</span></button>").join("") : '<p class="muted">None yet.</p>');
-    h += '<div class="acts"><button type="button" class="btn primary" id="cd-inv">New invoice</button><button type="button" class="btn" id="cd-edit">Edit</button><button type="button" class="btn bad" id="cd-del">Delete</button></div>';
+    h += '<div class="acts"><button type="button" class="btn primary" id="cd-inv">New Invoice</button><button type="button" class="btn" id="cd-edit">Edit</button><button type="button" class="btn bad" id="cd-del">Delete</button></div>';
     const m = modal(h, true);
     m.q("#cd-inv").addEventListener("click", () => { m.close(); editor(null, "Invoice", { client: c.name, email: c.email, phone: c.phone }); });
     m.q("#cd-edit").addEventListener("click", () => { m.close(); clientDialog(c); });
