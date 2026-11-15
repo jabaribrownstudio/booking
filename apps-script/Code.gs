@@ -585,7 +585,7 @@ function adminApi_(d) {
   if ((OWNER_ONLY[d.action] && me.role !== "Owner") || ((MANAGER_UP[d.action] || MONEY_ACTIONS[d.action]) && me.role === "Staff")) return { ok: false, error: "forbidden" };
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   switch (d.action) {
-    case "admin_list": { var lst = adminList_(); lst.me = me; return lst; }
+    case "admin_list": { var lst = adminList_(d.all === true); lst.me = me; return lst; }
 
     case "admin_status": {
       var sh = getSheet_(), row = parseInt(d.row, 10);
@@ -1003,7 +1003,7 @@ function invoiceHtml_(inv) {
   if (CONFIG.INVOICE_TERMS) terms.push(CONFIG.INVOICE_TERMS);
   if (!isInv && CONFIG.ESTIMATE_NOTE) terms.push(CONFIG.ESTIMATE_NOTE);
   if (terms.length) {
-    h += '<div style="margin-top:46px;color:#666666;line-height:1.7;"><b style="color:#555555;">Notes / Terms</b><br>' +
+    h += '<div style="margin-top:46px;color:#666666;line-height:1.7;"><b style="color:#555555;">All payments should be made to:</b><br>' +
       terms.map(function (t) { return esc_(t).replace(/\n/g, "<br>"); }).join("<br><br>") + '</div>';
   }
   h += '<div style="margin-top:50px;text-align:center;color:#888888;">' + esc_(CONFIG.INVOICE_FOOTER) + '</div></body></html>';
@@ -1140,7 +1140,12 @@ function moneyApi_(d) {
       try { seedPackages_(); } catch (se) { console.error("seed: " + se); }
       var year = parseInt(d.year, 10) || +todayStr_().slice(0, 4);
       var all = readInv_().sort(function (a, b) { return a.date < b.date ? 1 : a.date > b.date ? -1 : b.number - a.number; });
-      return { ok: true, invoices: all, fees: feesList_(), taxes: taxesList_(), finance: finance_(year, all), currency: CONFIG.CURRENCY_SYMBOL };
+      var fin = finance_(year, all);
+      var today0 = todayStr_();
+      var shown = all.filter(function (i) {
+        return +String(i.date).slice(0, 4) === year || i.status === "Draft" || i.status === "Sent" || i.status === "Partial";
+      });
+      return { ok: true, invoices: shown, fees: feesList_(), taxes: taxesList_(), finance: fin, currency: CONFIG.CURRENCY_SYMBOL };
     }
 
     case "admin_inv_save": {
@@ -1293,12 +1298,15 @@ function moneyApi_(d) {
 }
 
 /** Everything the admin app shows: all bookings, hours, days off (with row numbers) and settings. */
-function adminList_() {
+/** Sends everything from the last 60 days onwards by default, so the app stays quick as years of bookings pile up. all=true sends the lot. */
+function adminList_(all) {
   var sh = getSheet_(), last = sh.getLastRow(), tz = Session.getScriptTimeZone();
-  var bookings = [];
+  var cutoff = addDays_(todayStr_(), -60), bookings = [];
   if (last >= 2) {
     sh.getRange(2, 1, last - 1, HEADERS.length).getValues().forEach(function (r, i) {
       if (!r[COL.NAME - 1] && !r[COL.DATE - 1]) return;
+      var bd = String(r[8]);
+      if (!all && /^\d{4}-\d{2}-\d{2}$/.test(bd) && bd < cutoff) return;
       var ts = Object.prototype.toString.call(r[0]) === "[object Date]" ? Utilities.formatDate(r[0], tz, "yyyy-MM-dd HH:mm") : String(r[0]);
       bookings.push({ row: i + 2, created: ts, status: String(r[1]), name: String(r[2]), email: String(r[3]), phone: String(r[4]),
         instagram: String(r[5]), pkg: String(r[6]), price: String(r[7]), date: String(r[8]), start: String(r[9]), end: String(r[10]),
@@ -1311,7 +1319,7 @@ function adminList_() {
     if (!date) return;
     off.push({ row: i + 2, date: date, through: cellDate_(r.v[1], r.d[1]), from: parseTime_(r.d[2]), to: parseTime_(r.d[3]), note: String(r.d[4] || "") });
   });
-  return { ok: true, bookings: bookings, hours: getHours_(), off: off, settings: getSettings_() };
+  return { ok: true, bookings: bookings, truncated: !all, hours: getHours_(), off: off, settings: getSettings_() };
 }
 
 /** Daily trigger: emails clients whose Confirmed session is tomorrow. */

@@ -8,12 +8,14 @@ import androidx.glance.appwidget.updateAll
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.jabaribrownstudio.admin.widget.BookingsWidget
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 
 class MainViewModel(private val app: Application) : AndroidViewModel(app) {
-    private val store = Store(app)
+    private val store = Store.get(app)
     private val backend = Backend(store)
 
     var signedIn by mutableStateOf(store.signedIn)
@@ -61,11 +63,20 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
         checkUpdate()
         if (store.signedIn) {
             // Show what we had last time straight away, then refresh quietly.
-            store.getCache("list")?.let { try { val d = parseAdminData(JSONObject(it)); data = d; hoursDraft = d.hours } catch (e: Exception) { } }
-            store.getCache("money")?.let { try { val m = parseMoney(JSONObject(it)); money = m; moneyYear = m.finance.year } catch (e: Exception) { } }
-            Sync.schedule(app)
-            load()
-            if (data?.me?.isManager == true) loadMoney()
+            // Reading and parsing the saved copy happens off the main thread so the first frame is not delayed.
+            viewModelScope.launch {
+                val (d, m) = withContext(Dispatchers.Default) {
+                    val d = store.getCache("list")?.let { try { parseAdminData(JSONObject(it)) } catch (e: Exception) { null } }
+                    val m = store.getCache("money")?.let { try { parseMoney(JSONObject(it)) } catch (e: Exception) { null } }
+                    d to m
+                }
+                if (data == null && d != null) { data = d; hoursDraft = d.hours }
+                if (money == null && m != null) { money = m; moneyYear = m.finance.year }
+                Sync.schedule(app)
+                load()
+                if (data?.me?.isManager == true) loadMoney()
+            }
+            java.io.File(app.cacheDir, "pdfs").listFiles()?.forEach { it.delete() }
         }
     }
 
@@ -100,19 +111,29 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
         return r
     }
 
+    /** True once the full history (not just the last 60 days) has been loaded. */
+    var showingAll by mutableStateOf(false)
+
+    fun loadOlder() { showingAll = true; load() }
+
     fun load() {
         if (loading) return
         viewModelScope.launch {
             loading = true
-            val r = act("admin_list")
+            val all = showingAll
+            val r = act("admin_list", if (all) JSONObject().put("all", true) else JSONObject())
             if (r != null && r.ok) {
-                val d = parseAdminData(r.json)
+                // Parsing, saving and building the widget list happen on a background thread.
+                val d = withContext(Dispatchers.Default) {
+                    val d = parseAdminData(r.json)
+                    if (!all) store.putCache("list", r.json.toString())
+                    store.saveWidget(Sync.upcoming(d.bookings).take(40), d.me.name)
+                    store.setSeenRows(d.bookings.map { it.row })
+                    d
+                }
                 data = d
                 lastLoad = System.currentTimeMillis()
-                store.putCache("list", r.json.toString())
                 if (!hoursDirty) hoursDraft = d.hours
-                store.saveWidget(Sync.upcoming(d.bookings).take(40), d.me.name)
-                store.setSeenRows(d.bookings.map { it.row })
                 try { BookingsWidget().updateAll(app) } catch (e: Exception) { }
                 if (d.me.isManager && money == null) loadMoney()
             } else if (r != null) message = "Couldn't load your data."

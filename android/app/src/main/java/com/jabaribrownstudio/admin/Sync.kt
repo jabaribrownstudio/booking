@@ -21,13 +21,14 @@ object Sync {
 
     /** Fetches the list, updates the widget cache and redraws the widget. Returns the data, or null if it failed. */
     suspend fun refresh(context: Context): AdminData? {
-        val store = Store(context)
+        val store = Store.get(context)
         if (!store.signedIn) { BookingsWidget().updateAll(context); return null }
         return try {
             val r = Backend(store).call("admin_list")
             if (!r.ok) { BookingsWidget().updateAll(context); return null }
             val data = parseAdminData(r.json)
             store.saveWidget(upcoming(data.bookings).take(40), data.me.name)
+            store.lastCheckAt = System.currentTimeMillis()
             Notify.check(context, store, data.bookings)
             BookingsWidget().updateAll(context)
             data

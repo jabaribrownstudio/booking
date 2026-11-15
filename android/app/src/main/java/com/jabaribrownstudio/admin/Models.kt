@@ -25,17 +25,12 @@ data class Booking(
     val source: String = "",
     val created: String = ""
 ) {
-    val localDate: LocalDate? get() = try { LocalDate.parse(date) } catch (e: Exception) { null }
-    val startTime: LocalTime? get() = parseTime(start)
-    val endTime: LocalTime? get() = parseTime(end)
-    val startDateTime: LocalDateTime? get() {
-        val d = localDate ?: return null
-        return d.atTime(startTime ?: LocalTime.MIDNIGHT)
-    }
-    val endDateTime: LocalDateTime? get() {
-        val d = localDate ?: return null
-        return d.atTime(endTime ?: startTime ?: LocalTime.MIDNIGHT)
-    }
+    // Parsed once per booking instead of on every sort, filter and redraw.
+    val localDate: LocalDate? by lazy(LazyThreadSafetyMode.PUBLICATION) { try { LocalDate.parse(date) } catch (e: Exception) { null } }
+    val startTime: LocalTime? by lazy(LazyThreadSafetyMode.PUBLICATION) { parseTime(start) }
+    val endTime: LocalTime? by lazy(LazyThreadSafetyMode.PUBLICATION) { parseTime(end) }
+    val startDateTime: LocalDateTime? by lazy(LazyThreadSafetyMode.PUBLICATION) { localDate?.atTime(startTime ?: LocalTime.MIDNIGHT) }
+    val endDateTime: LocalDateTime? by lazy(LazyThreadSafetyMode.PUBLICATION) { localDate?.atTime(endTime ?: startTime ?: LocalTime.MIDNIGHT) }
     val isActive: Boolean get() = status != "Cancelled"
 }
 
@@ -60,7 +55,9 @@ data class AdminData(
     val hours: Hours,
     val off: List<OffDay>,
     val settings: Settings,
-    val me: Me
+    val me: Me,
+    /** True when older bookings were left out to keep the app fast. */
+    val truncated: Boolean = false
 )
 
 fun parseAdminData(j: JSONObject): AdminData {
@@ -100,7 +97,7 @@ fun parseAdminData(j: JSONObject): AdminData {
     val settings = Settings(so.optInt("slotInterval", 30), so.optInt("bufferMinutes", 0), so.optInt("minNoticeHours", 0), so.optInt("maxDaysAhead", 60))
     val mo = j.optJSONObject("me")
     val me = Me(mo?.optString("name") ?: "", mo?.optString("role") ?: "Staff")
-    return AdminData(bs, hours, off, settings, me)
+    return AdminData(bs, hours, off, settings, me, j.optBoolean("truncated", false))
 }
 
 data class TeamMember(

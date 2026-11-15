@@ -8,7 +8,13 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /** Credentials and the small cache the home-screen widget reads. Encrypted where the phone allows it. */
-class Store(context: Context) {
+class Store private constructor(context: Context) {
+    companion object {
+        @Volatile private var inst: Store? = null
+        /** One shared instance: opening the encrypted file is slow, so it happens once (and is warmed in the background at launch). */
+        fun get(context: Context): Store = inst ?: synchronized(this) { inst ?: Store(context.applicationContext).also { inst = it } }
+    }
+
     private val prefs: SharedPreferences = try {
         val key = MasterKey.Builder(context).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build()
         EncryptedSharedPreferences.create(
@@ -46,7 +52,7 @@ class Store(context: Context) {
     fun getCache(key: String): String? = prefs.getString("cache_$key", null)
 
     fun signOut() {
-        prefs.edit().remove("cache_list").remove("cache_money").remove("seenRows").remove("mode").remove("username").remove("secret").remove("widget").remove("widgetName").remove("widgetAt").apply()
+        prefs.edit().remove("cache_list").remove("cache_money").remove("seenRows").remove("reminded").remove("mode").remove("username").remove("secret").remove("widget").remove("widgetName").remove("widgetAt").apply()
     }
 
     /* ---- widget cache ---- */
@@ -75,6 +81,13 @@ class Store(context: Context) {
     /** Booking rows we have already told the owner about. Null until the first refresh. */
     fun seenRows(): Set<Int>? = prefs.getString("seenRows", null)?.split(",")?.mapNotNull { it.toIntOrNull() }?.toSet()
     fun setSeenRows(rows: Collection<Int>) = prefs.edit().putString("seenRows", rows.joinToString(",")).apply()
+
+    /** Appointments we have already sent a reminder for. */
+    fun remindedRows(): Set<Int> = prefs.getString("reminded", "")?.split(",")?.mapNotNull { it.toIntOrNull() }?.toSet() ?: emptySet()
+    fun setRemindedRows(rows: Collection<Int>) = prefs.edit().putString("reminded", rows.joinToString(",")).apply()
+    var lastCheckAt: Long
+        get() = prefs.getLong("lastCheckAt", 0L)
+        set(v) = prefs.edit().putLong("lastCheckAt", v).apply()
 
     val widgetUpdatedAt: Long get() = prefs.getLong("widgetAt", 0L)
 }

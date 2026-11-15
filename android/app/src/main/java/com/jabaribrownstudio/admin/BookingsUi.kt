@@ -56,6 +56,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.produceState
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.time.LocalDate
 import java.time.LocalDateTime
 
@@ -81,11 +84,20 @@ fun BookingsTab(vm: MainViewModel, pad: PaddingValues) {
     Box(Modifier.fillMaxSize().padding(pad)) {
         PullToRefreshBox(isRefreshing = vm.loading, onRefresh = { vm.load() }, modifier = Modifier.fillMaxSize()) {
             val all = d?.bookings ?: emptyList()
-            val list = filtered(all, vm.filter)
-            val today = LocalDate.now()
-            val todayN = all.count { it.isActive && it.localDate == today && (it.endDateTime ?: it.startDateTime)?.isAfter(LocalDateTime.now()) == true }
-            val weekN = all.count { it.isActive && it.localDate != null && !it.localDate!!.isBefore(today) && !it.localDate!!.isAfter(today.plusDays(29)) }
-            val pendN = filtered(all, "Pending").size
+            // Sorting, grouping and counting only re-run when the data or filter changes, not on every redraw.
+            val list by produceState(emptyList<Booking>(), all, vm.filter) { value = withContext(Dispatchers.Default) { filtered(all, vm.filter) } }
+            val groups = remember(list) { list.groupBy { it.date } }
+            val stats by produceState(Triple(0, 0, 0), all) {
+                value = withContext(Dispatchers.Default) {
+                    val today = LocalDate.now(); val now = LocalDateTime.now()
+                    Triple(
+                        all.count { it.isActive && it.localDate == today && (it.endDateTime ?: it.startDateTime)?.isAfter(now) == true },
+                        all.count { b -> b.isActive && b.localDate.let { it != null && !it.isBefore(today) && !it.isAfter(today.plusDays(29)) } },
+                        filtered(all, "Pending").size
+                    )
+                }
+            }
+            val (todayN, weekN, pendN) = stats
             LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 96.dp)) {
                 item {
                     Text(
@@ -110,7 +122,6 @@ fun BookingsTab(vm: MainViewModel, pad: PaddingValues) {
                 } else if (list.isEmpty()) {
                     item { Text("Nothing here.", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(24.dp)) }
                 } else {
-                    val groups = list.groupBy { it.date }
                     groups.forEach { (date, bs) ->
                         item(key = "h$date") {
                             Text(
@@ -122,6 +133,9 @@ fun BookingsTab(vm: MainViewModel, pad: PaddingValues) {
                             BookingCard(b, expanded = vm.openRow == b.row, onToggle = { vm.openRow = if (vm.openRow == b.row) -1 else b.row }, onStatus = { s, note -> if (s == "Confirmed" && d?.me?.isManager == true) confirming = b else vm.setStatus(b.row, s, comment = note) })
                             Spacer(Modifier.height(8.dp))
                         }
+                    }
+                    if (d.truncated && !vm.showingAll && vm.filter == "Past") item(key = "older") {
+                        androidx.compose.material3.TextButton(onClick = { vm.loadOlder() }, modifier = Modifier.fillMaxWidth()) { Text("Load older bookings") }
                     }
                 }
             }

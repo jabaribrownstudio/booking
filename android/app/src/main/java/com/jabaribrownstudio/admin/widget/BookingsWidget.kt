@@ -56,7 +56,7 @@ class BookingsWidget : GlanceAppWidget() {
     override val sizeMode = SizeMode.Single
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        val store = Store(context)
+        val store = Store.get(context)
         val signedIn = store.signedIn
         val now = LocalDateTime.now()
         val items = if (signedIn) store.widgetItems().filter {

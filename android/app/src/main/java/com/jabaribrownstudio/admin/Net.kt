@@ -35,10 +35,13 @@ object Net {
             conn.requestMethod = "GET"
             hops++
         }
-        val code = conn.responseCode
-        val stream = if (code >= 400) conn.errorStream else conn.inputStream
-        val text = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } ?: ""
-        conn.disconnect()
+        val code: Int
+        val text: String
+        try {
+            code = conn.responseCode
+            val stream = if (code >= 400) conn.errorStream else conn.inputStream
+            text = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } ?: ""
+        } finally { conn.disconnect() }
         val j = try { JSONObject(text) } catch (e: Exception) { JSONObject().put("ok", false).put("error", "bad_response") }
         return ApiResult(code, j)
     }
@@ -62,9 +65,7 @@ object Net {
             val c = open(url)
             c.requestMethod = "GET"
             c.setRequestProperty("Accept", "application/vnd.github+json")
-            val text = if (c.responseCode in 200..299) c.inputStream.bufferedReader().use { it.readText() } else null
-            c.disconnect()
-            text
+            try { if (c.responseCode in 200..299) c.inputStream.bufferedReader().use { it.readText() } else null } finally { c.disconnect() }
         } catch (e: Exception) { null }
     }
 

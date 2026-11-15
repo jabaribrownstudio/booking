@@ -180,3 +180,8 @@ Team accounts, owner setup and recovery stay in the web admin app. The build use
 - The **Invoices** tab in the Android app (managers and owners) lists invoices and estimates, records payments, emails or shares the PDF, converts an estimate into an invoice, and shows what you collected each month and year.
 - Everything is stored in the **Invoices** tab of your sheet. Your business details and bank information are in `CONFIG` at the top of `Code.gs`.
 - After updating `Code.gs`: run `testInvoice` once from the editor (it asks for permission and emails you a sample), then Deploy → Manage deployments → New version. If you use the Cloudflare login, redeploy `worker/worker.js` too.
+
+## App speed and notifications
+- The app keeps a saved copy of your bookings so it opens instantly, then refreshes in the background. Only the last 60 days of bookings load by default; open **Past** and tap **Load older bookings** for the rest.
+- Notifications: new bookings and reminders (about an hour before confirmed appointments) are checked every ~15 minutes. Account → **Send a test notification** confirms alerts reach your phone.
+- Each build publishes an optimised (non-debug) APK, signed with the same key, so it installs over the old one.

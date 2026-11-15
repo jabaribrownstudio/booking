@@ -48,6 +48,14 @@ fun AccountTab(vm: MainViewModel, pad: PaddingValues) {
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
+        val ctx = androidx.compose.ui.platform.LocalContext.current
+        var testMsg by remember { mutableStateOf("") }
+        Card2 {
+            Text("Notifications", style = MaterialTheme.typography.titleMedium)
+            Text("New bookings and appointment reminders (about an hour before) are checked roughly every 15 minutes, even when the app is closed. If your phone is aggressive about battery saving, set this app to “Unrestricted”.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            OutlinedButton(onClick = { testMsg = if (Notify.test(ctx)) "Sent. You should see it now." else "Notifications are blocked. Turn them on in your phone's settings for this app." }, modifier = Modifier.fillMaxWidth()) { Text("Send a test notification") }
+            if (testMsg.isNotEmpty()) Text(testMsg, style = MaterialTheme.typography.bodyMedium)
+        }
         if (me?.role == "Owner") androidx.compose.material3.Button(onClick = { showTeam = true }, modifier = Modifier.fillMaxWidth().height(50.dp)) { Text("Manage team") }
         if (vm.mode == "worker") OutlinedButton(onClick = { changing = true }, modifier = Modifier.fillMaxWidth().height(50.dp)) { Text("Change password") }
         OutlinedButton(onClick = { vm.signOut() }, modifier = Modifier.fillMaxWidth().height(50.dp)) { Text("Sign out") }

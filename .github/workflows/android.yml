@@ -21,17 +21,24 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.10.2"
-      - name: Build debug APK
+      - name: Build APKs
         working-directory: android
         env:
           APP_BUILD: ${{ github.run_number }}
-        run: gradle assembleDebug --no-daemon --stacktrace > ../build.log 2>&1
+        run: |
+          # The release build is the fast one (not debuggable, optimised). The debug build is kept as a fallback.
+          gradle assembleDebug --no-daemon --stacktrace > ../build.log 2>&1
+          gradle assembleRelease --no-daemon --stacktrace >> ../build.log 2>&1 || echo "RELEASE BUILD FAILED" >> ../build.log
       - name: Publish APK
         if: success()
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          cp android/app/build/outputs/apk/debug/app-debug.apk studio-admin.apk
+          if [ -f android/app/build/outputs/apk/release/app-release.apk ]; then
+            cp android/app/build/outputs/apk/release/app-release.apk studio-admin.apk
+          else
+            cp android/app/build/outputs/apk/debug/app-debug.apk studio-admin.apk
+          fi
           gh release delete android-latest --cleanup-tag --yes || true
           gh release create android-latest studio-admin.apk --title "JB Studio Admin (build ${{ github.run_number }})" --notes "Build ${{ github.run_number }}. Download studio-admin.apk on your phone and install it over the old version."
       - name: Post build log
