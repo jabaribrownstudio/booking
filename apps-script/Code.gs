@@ -596,7 +596,7 @@ function adminApi_(d) {
       if (before !== d.status) {
         var invOpt = d.invoice || null, inv = null;
         if (d.status === "Confirmed" && (invOpt || CONFIG.AUTO_INVOICE_ON_CONFIRM)) {
-          try { inv = createInvoiceForBooking_(row, invOpt ? invOpt.extras : []); } catch (ie) { console.error("invoice: " + ie); }
+          try { inv = createInvoiceForBooking_(row, invOpt ? invOpt.extras : [], invOpt ? invOpt.discount : null, invOpt ? invOpt.taxes : []); } catch (ie) { console.error("invoice: " + ie); }
         }
         var why = d.status === "Cancelled" ? cleanText_(d.comment, 500) : "";
         if (why) {
@@ -705,9 +705,9 @@ function adminApi_(d) {
 
 /* ---------- invoices, estimates and money tracking ---------- */
 
-var TAB_INV = "Invoices", TAB_FEES = "Fees";
+var TAB_INV = "Invoices", TAB_FEES = "Fees", TAB_TAXES = "Taxes";
 var INV_HEADERS = ["Number", "Type", "Status", "Date", "Due / valid until", "Client", "Email", "Phone", "Booking row",
-                   "Items (JSON)", "Total", "Paid", "Payments (JSON)", "Notes", "Created", "Sent", "From estimate"];
+                   "Items (JSON)", "Total", "Paid", "Payments (JSON)", "Notes", "Created", "Sent", "From estimate", "Discount (JSON)", "Taxes (JSON)"];
 
 // What each package says on its invoice line. Keep in step with js/config.js.
 var PACKAGE_DETAILS = {
@@ -717,7 +717,7 @@ var PACKAGE_DETAILS = {
   "professional headshot": { title: "Professional Headshot", lines: ["Duration: 20 minutes", "5 Retouched Images", "1 Outfit", "1 Studio Setup"] }
 };
 
-var MONEY_ACTIONS = { admin_inv_receipt: 1, admin_money: 1, admin_inv_save: 1, admin_inv_send: 1, admin_inv_pay: 1, admin_inv_unpay: 1, admin_inv_status: 1,
+var MONEY_ACTIONS = { admin_fee_update: 1, admin_tax_add: 1, admin_tax_remove: 1, admin_inv_receipt: 1, admin_money: 1, admin_inv_save: 1, admin_inv_send: 1, admin_inv_pay: 1, admin_inv_unpay: 1, admin_inv_status: 1,
                       admin_inv_convert: 1, admin_inv_pdf: 1, admin_inv_delete: 1, admin_fee_add: 1, admin_fee_remove: 1 };
 
 function safeJson_(v, fallback) { try { var x = JSON.parse(String(v)); return x == null ? fallback : x; } catch (e) { return fallback; } }
@@ -745,12 +745,25 @@ function cleanText_(v, max) { return String(v == null ? "" : v).replace(/\r/g, "
 
 function invSheet_() {
   var ss = SpreadsheetApp.getActiveSpreadsheet(), sh = ss.getSheetByName(TAB_INV);
-  if (sh) return sh;
+  if (sh) {
+    if (sh.getLastColumn() < INV_HEADERS.length) sh.getRange(1, 1, 1, INV_HEADERS.length).setValues([INV_HEADERS]).setFontWeight("bold");
+    return sh;
+  }
   sh = ss.insertSheet(TAB_INV);
   sh.getRange(1, 1, 1, INV_HEADERS.length).setValues([INV_HEADERS]).setFontWeight("bold");
   sh.setFrozenRows(1);
   sh.getRange(2, 4, 3000, 2).setNumberFormat("@");
   sh.setColumnWidth(6, 180); sh.setColumnWidth(10, 260);
+  return sh;
+}
+
+function taxesSheet_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet(), sh = ss.getSheetByName(TAB_TAXES);
+  if (sh) return sh;
+  sh = ss.insertSheet(TAB_TAXES);
+  sh.getRange(1, 1, 1, 2).setValues([["Tax name", "Rate (%)"]]).setFontWeight("bold");
+  sh.setFrozenRows(1);
+  sh.setColumnWidth(1, 220);
   return sh;
 }
 
@@ -770,7 +783,7 @@ function invFromRow_(r, row) {
   return { row: row, number: +r[0] || 0, type: String(r[1]), status: String(r[2]), date: dateStr_(r[3]), due: dateStr_(r[4]),
     client: String(r[5]), email: String(r[6] || ""), phone: String(r[7] || ""), bookingRow: +r[8] || 0, items: items,
     total: +r[10] || 0, paid: +r[11] || 0, payments: pays, notes: String(r[13] || ""), created: String(r[14] || ""),
-    sent: String(r[15] || ""), from: +r[16] || 0 };
+    sent: String(r[15] || ""), from: +r[16] || 0, discount: safeJson_(r[17], null), taxes: safeJson_(r[18], []) };
 }
 
 function readInv_() {
@@ -797,7 +810,8 @@ function writeInv_(inv) {
   var r = inv.row || Math.max(sh.getLastRow() + 1, 2);
   sh.getRange(r, 4, 1, 2).setNumberFormat("@");
   sh.getRange(r, 1, 1, INV_HEADERS.length).setValues([[inv.number, inv.type, inv.status, inv.date, inv.due, inv.client, inv.email, inv.phone,
-    inv.bookingRow || "", JSON.stringify(inv.items), inv.total, inv.paid, JSON.stringify(inv.payments), inv.notes, inv.created, inv.sent, inv.from || ""]]);
+    inv.bookingRow || "", JSON.stringify(inv.items), inv.total, inv.paid, JSON.stringify(inv.payments), inv.notes, inv.created, inv.sent, inv.from || "",
+    inv.discount ? JSON.stringify(inv.discount) : "", JSON.stringify(inv.taxes || [])]]);
   inv.row = r;
   return inv;
 }
@@ -820,6 +834,37 @@ function cleanItems_(arr) {
   return out;
 }
 
+function cleanDiscount_(x) {
+  if (!x) return null;
+  var type = x.type === "amount" ? "amount" : "percent", v = +x.value;
+  if (!(v > 0)) return null;
+  return { type: type, value: Math.min(v, type === "percent" ? 100 : 1e8) };
+}
+
+function cleanTaxes_(arr) {
+  var out = [];
+  (arr || []).slice(0, 5).forEach(function (t) {
+    var name = cleanText_(t && t.name, 40), rate = +(t && t.rate);
+    if (name && rate > 0 && rate <= 100) out.push({ name: name, rate: rate });
+  });
+  return out;
+}
+
+/** Subtotal, discount, each tax and the total. Taxes are worked out after the discount. */
+function totals_(items, discount, taxes) {
+  var sub = calcTotal_(items), disc = 0;
+  if (discount && discount.value > 0) disc = discount.type === "amount" ? discount.value : sub * discount.value / 100;
+  disc = Math.round(Math.min(Math.max(disc, 0), Math.max(sub, 0)) * 100) / 100;
+  var base = sub - disc, tl = [], tt = 0;
+  (taxes || []).forEach(function (t) {
+    var a = Math.round(base * t.rate) / 100;
+    tt += a; tl.push({ name: t.name, rate: t.rate, amount: a });
+  });
+  return { subtotal: sub, discount: disc, taxes: tl, total: Math.round((base + tt) * 100) / 100 };
+}
+
+function recalc_(inv) { inv.total = totals_(inv.items, inv.discount, inv.taxes).total; return inv; }
+
 function calcTotal_(items) {
   var t = 0;
   items.forEach(function (i) { t += Math.round(i.qty * i.price * 100) / 100; });
@@ -840,15 +885,16 @@ function invoiceForBooking_(row) {
   return found;
 }
 
-function createInvoiceForBooking_(row, extras) {
+function createInvoiceForBooking_(row, extras, discount, taxes) {
   var existing = invoiceForBooking_(row);
   if (existing) return existing;
   var v = getSheet_().getRange(row, 1, 1, HEADERS.length).getValues()[0];
   var date = todayStr_(), items = [bookingItem_(v)].concat(cleanItems_(extras));
-  return writeInv_({ row: 0, number: nextNumber_("Invoice"), type: "Invoice", status: "Draft", date: date,
+  var inv = ({ row: 0, number: nextNumber_("Invoice"), type: "Invoice", status: "Draft", date: date,
     due: addDays_(date, CONFIG.PAYMENT_DUE_DAYS), client: String(v[COL.NAME - 1]), email: String(v[COL.EMAIL - 1] || ""),
-    phone: String(v[4] || ""), bookingRow: row, items: items, total: calcTotal_(items), paid: 0, payments: [], notes: "",
-    created: new Date().toISOString(), sent: "", from: 0 });
+    phone: String(v[4] || ""), bookingRow: row, items: items, total: 0, paid: 0, payments: [], notes: "",
+    created: new Date().toISOString(), sent: "", from: 0, discount: cleanDiscount_(discount), taxes: cleanTaxes_(taxes) });
+  recalc_(inv); return writeInv_(inv);
 }
 
 function setPaidStatus_(inv) {
@@ -932,7 +978,14 @@ function invoiceHtml_(inv) {
     return '<tr><td align="right" style="padding:6px 10px;' + (bold ? 'font-weight:bold;' : '') + '">' + k + '</td>' +
       '<td align="right" width="120" style="padding:6px 10px;' + (bold ? 'font-weight:bold;' : '') + '">' + v + '</td></tr>';
   };
-  h += '<table width="62%" align="right" cellpadding="0" cellspacing="0" style="margin-top:16px;">' + tr("<b>Total:</b>", money_(inv.total));
+  var tt = totals_(inv.items, inv.discount, inv.taxes);
+  h += '<table width="62%" align="right" cellpadding="0" cellspacing="0" style="margin-top:16px;">';
+  if (tt.discount > 0 || tt.taxes.length) {
+    h += tr("Subtotal:", money_(tt.subtotal));
+    if (tt.discount > 0) h += tr("Discount" + (inv.discount && inv.discount.type === "percent" ? " (" + inv.discount.value + "%)" : "") + ":", "-" + money_(tt.discount));
+    tt.taxes.forEach(function (t) { h += tr(esc_(t.name) + " (" + t.rate + "%):", money_(t.amount)); });
+  }
+  h += tr("<b>Total:</b>", money_(inv.total));
   if (isInv) {
     inv.payments.forEach(function (p) {
       h += tr("Payment on " + fmtDate_(p.date) + (p.method ? " using a " + esc_(p.method) : "") + ":", money_(p.amount));
@@ -1053,6 +1106,10 @@ function finance_(year, all) {
     years: Object.keys(years).map(Number).sort(function (a, b) { return b - a; }) };
 }
 
+function taxesList_() {
+  return rows_(TAB_TAXES, 2).map(function (r, i) { return { row: i + 2, name: String(r.d[0]), rate: +r.v[1] || 0 }; }).filter(function (t) { return t.name; });
+}
+
 function feesList_() {
   return rows_(TAB_FEES, 3).map(function (r, i) { return { row: i + 2, name: String(r.d[0]), desc: String(r.d[1]), price: +r.v[2] || 0 }; })
     .filter(function (f) { return f.name; });
@@ -1063,7 +1120,7 @@ function moneyApi_(d) {
     case "admin_money": {
       var year = parseInt(d.year, 10) || +todayStr_().slice(0, 4);
       var all = readInv_().sort(function (a, b) { return a.date < b.date ? 1 : a.date > b.date ? -1 : b.number - a.number; });
-      return { ok: true, invoices: all, fees: feesList_(), finance: finance_(year, all), currency: CONFIG.CURRENCY_SYMBOL };
+      return { ok: true, invoices: all, fees: feesList_(), taxes: taxesList_(), finance: finance_(year, all), currency: CONFIG.CURRENCY_SYMBOL };
     }
 
     case "admin_inv_save": {
@@ -1077,11 +1134,11 @@ function moneyApi_(d) {
         if (inv.type === "Invoice" && (inv.status === "Paid" || inv.status === "Void")) return { ok: false, error: "locked" };
       } else {
         inv = { row: 0, number: nextNumber_(type), type: type, status: "Draft", date: todayStr_(), due: "", client: "", email: "", phone: "", bookingRow: 0,
-          items: [], total: 0, paid: 0, payments: [], notes: "", created: new Date().toISOString(), sent: "", from: 0 };
+          items: [], total: 0, paid: 0, payments: [], notes: "", created: new Date().toISOString(), sent: "", from: 0, discount: null, taxes: [] };
       }
       inv.client = client; inv.email = email; inv.phone = clean_(d.phone, 40);
       inv.bookingRow = parseInt(d.bookingRow, 10) || inv.bookingRow || 0;
-      inv.items = items; inv.total = calcTotal_(items); inv.notes = cleanText_(d.notes, 1000);
+      inv.items = items; inv.discount = cleanDiscount_(d.discount); inv.taxes = cleanTaxes_(d.taxes); recalc_(inv); inv.notes = cleanText_(d.notes, 1000);
       if (isYmd_(d.date)) inv.date = d.date;
       inv.due = isYmd_(d.due) ? d.due : addDays_(inv.date, type === "Estimate" ? CONFIG.ESTIMATE_VALID_DAYS : CONFIG.PAYMENT_DUE_DAYS);
       setPaidStatus_(inv);
@@ -1156,7 +1213,7 @@ function moneyApi_(d) {
       var today = todayStr_();
       var ni = writeInv_({ row: 0, number: nextNumber_("Invoice"), type: "Invoice", status: "Draft", date: today, due: addDays_(today, CONFIG.PAYMENT_DUE_DAYS),
         client: e.client, email: e.email, phone: e.phone, bookingRow: e.bookingRow, items: e.items, total: e.total, paid: 0, payments: [], notes: e.notes,
-        created: new Date().toISOString(), sent: "", from: e.number });
+        created: new Date().toISOString(), sent: "", from: e.number, discount: e.discount, taxes: e.taxes });
       e.status = "Accepted"; writeInv_(e);
       return { ok: true, row: ni.row, number: ni.number };
     }
@@ -1180,6 +1237,28 @@ function moneyApi_(d) {
       if (!name || isNaN(price) || price < 0 || price > 1e8) return { ok: false, error: "invalid_input" };
       var fs = feesSheet_(), r = Math.max(fs.getLastRow() + 1, 2);
       fs.getRange(r, 1, 1, 3).setValues([[clean_(name, 100), clean_(d.desc, 200), price]]);
+      return { ok: true };
+    }
+
+    case "admin_fee_update": {
+      var fu = feesSheet_(), ur = parseInt(d.row, 10), un = cleanText_(d.name, 100), up = +d.price;
+      if (!(ur >= 2 && ur <= fu.getLastRow()) || !un || isNaN(up) || up < 0 || up > 1e8) return { ok: false, error: "invalid_input" };
+      fu.getRange(ur, 1, 1, 3).setValues([[clean_(un, 100), clean_(d.desc, 200), up]]);
+      return { ok: true };
+    }
+
+    case "admin_tax_add": {
+      var tn = cleanText_(d.name, 40), tr_ = +d.rate;
+      if (!tn || !(tr_ > 0 && tr_ <= 100)) return { ok: false, error: "invalid_input" };
+      var ts = taxesSheet_();
+      ts.getRange(Math.max(ts.getLastRow() + 1, 2), 1, 1, 2).setValues([[clean_(tn, 40), tr_]]);
+      return { ok: true };
+    }
+
+    case "admin_tax_remove": {
+      var ts2 = taxesSheet_(), tx = parseInt(d.row, 10);
+      if (!(tx >= 2 && tx <= ts2.getLastRow())) return { ok: false, error: "invalid_input" };
+      ts2.deleteRow(tx);
       return { ok: true };
     }
 

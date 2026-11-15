@@ -85,7 +85,7 @@ fun InvoicesTab(vm: MainViewModel, pad: PaddingValues) {
                             Text("Invoices", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(top = 8.dp))
                             Text("Estimates, payments and what you've earned.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        TextButton(onClick = { showFees = true }) { Text("Fees") }
+                        TextButton(onClick = { showFees = true }) { Text("Saved items") }
                     }
                 }
                 if (m == null) {
@@ -138,7 +138,7 @@ fun InvoicesTab(vm: MainViewModel, pad: PaddingValues) {
     if (cur != null) InvoiceDetail(vm, cur, onClose = { viewing = -1 }, onEdit = { editing = cur; viewing = -1 })
     if (creating != null) InvoiceEditor(vm, null, creating!!) { creating = null }
     if (editing != null) InvoiceEditor(vm, editing, editing!!.type) { editing = null }
-    if (showFees && m != null) FeesDialog(vm, m.fees) { showFees = false }
+    if (showFees && m != null) FeesDialog(vm, m.fees, m.taxes) { showFees = false }
 }
 
 @Composable
@@ -217,6 +217,14 @@ private fun InvoiceDetail(vm: MainViewModel, inv: Invoice, onClose: () -> Unit, 
                 }
             }
             HorizontalDivider()
+            val tt = totals(inv.items, inv.discount, inv.taxes)
+            if (tt.discount > 0 || tt.taxes.isNotEmpty()) {
+                Row { Text("Subtotal", Modifier.weight(1f)); Text(Fmt.cash(tt.subtotal)) }
+                if (tt.discount > 0) Row {
+                    Text("Discount" + (if (inv.discount?.type == "percent") " (${num(inv.discount.value)}%)" else ""), Modifier.weight(1f)); Text("-" + Fmt.cash(tt.discount))
+                }
+                tt.taxes.forEach { (t, a) -> Row { Text("${t.name} (${num(t.rate)}%)", Modifier.weight(1f)); Text(Fmt.cash(a)) } }
+            }
             Row { Text("Total", Modifier.weight(1f), fontWeight = FontWeight.Bold); Text(Fmt.cash(inv.total), fontWeight = FontWeight.Bold) }
             if (inv.isInvoice) {
                 inv.payments.forEachIndexed { i, p ->
@@ -299,28 +307,103 @@ private fun PaymentDialog(inv: Invoice, onDismiss: () -> Unit, onSave: (Double, 
 }
 
 @Composable
-private fun FeesDialog(vm: MainViewModel, fees: List<Fee>, onDismiss: () -> Unit) {
-    var name by remember { mutableStateOf("") }
-    var price by remember { mutableStateOf("") }
+private fun FeesDialog(vm: MainViewModel, fees: List<Fee>, taxes: List<SavedTax>, onDismiss: () -> Unit) {
+    var editing by remember { mutableStateOf<Fee?>(null) }
+    var adding by remember { mutableStateOf(false) }
+    var taxName by remember { mutableStateOf("") }
+    var taxRate by remember { mutableStateOf("") }
     AlertDialog(
-        onDismissRequest = onDismiss, title = { Text("Extra fees you can add") },
+        onDismissRequest = onDismiss, title = { Text("Saved items and taxes") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                if (fees.isEmpty()) Text("No fees yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("Items", style = MaterialTheme.typography.labelLarge)
+                Text("Save things you charge for often, then add them to any invoice in one tap.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 fees.forEach { f ->
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(f.name, Modifier.weight(1f)); Text(Fmt.cash(f.price))
+                    Row(Modifier.fillMaxWidth().clickable { editing = f }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(f.name)
+                            if (f.desc.isNotBlank()) Text(f.desc, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                        }
+                        Text(Fmt.cash(f.price))
                         IconButton(onClick = { vm.removeFee(f.row) }, modifier = Modifier.size(32.dp)) { Icon(Icons.Outlined.Close, "Remove", Modifier.size(16.dp)) }
                     }
                 }
+                TextButton(onClick = { adding = true }) { Text("+ New saved item") }
                 HorizontalDivider(Modifier.padding(vertical = 6.dp))
-                OutlinedTextField(name, { name = it }, label = { Text("New fee (e.g. Permit fee)") }, singleLine = true)
-                OutlinedTextField(price, { price = it.filter { c -> c.isDigit() || c == '.' } }, label = { Text("Price (${AppConfig.CURRENCY})") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
-                TextButton(onClick = { val p = price.toDoubleOrNull(); if (name.isNotBlank() && p != null) { vm.addFee(name.trim(), p); name = ""; price = "" } }) { Text("Add fee") }
+                Text("Taxes", style = MaterialTheme.typography.labelLarge)
+                taxes.forEach { t ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(t.name, Modifier.weight(1f)); Text(num(t.rate) + "%")
+                        IconButton(onClick = { vm.removeTax(t.row) }, modifier = Modifier.size(32.dp)) { Icon(Icons.Outlined.Close, "Remove", Modifier.size(16.dp)) }
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(taxName, { taxName = it }, label = { Text("Tax (e.g. GCT)") }, singleLine = true, modifier = Modifier.weight(1.4f))
+                    OutlinedTextField(taxRate, { taxRate = it.filter { c -> c.isDigit() || c == '.' } }, label = { Text("%") }, singleLine = true, modifier = Modifier.weight(1f), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
+                }
+                TextButton(onClick = { val r = taxRate.toDoubleOrNull(); if (taxName.isNotBlank() && r != null && r > 0) { vm.addTax(taxName.trim(), r); taxName = ""; taxRate = "" } }) { Text("+ Save tax") }
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } }
     )
+    if (adding || editing != null) {
+        val f = editing
+        var name by remember(f) { mutableStateOf(f?.name ?: "") }
+        var desc by remember(f) { mutableStateOf(f?.desc ?: "") }
+        var price by remember(f) { mutableStateOf(f?.let { num(it.price) } ?: "") }
+        AlertDialog(
+            onDismissRequest = { adding = false; editing = null },
+            title = { Text(if (f == null) "New saved item" else "Edit saved item") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(name, { name = it }, label = { Text("Name (e.g. Permit fee)") }, singleLine = true)
+                    OutlinedTextField(desc, { desc = it }, label = { Text("Description (optional)") })
+                    OutlinedTextField(price, { price = it.filter { c -> c.isDigit() || c == '.' } }, label = { Text("Price (${AppConfig.CURRENCY})") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val p = price.toDoubleOrNull()
+                    if (name.isNotBlank() && p != null) {
+                        if (f == null) vm.addFee(name.trim(), desc.trim(), p) else vm.updateFee(f.row, name.trim(), desc.trim(), p)
+                        adding = false; editing = null
+                    }
+                }) { Text("Save") }
+            },
+            dismissButton = { TextButton(onClick = { adding = false; editing = null }) { Text("Cancel") } }
+        )
+    }
+}
+
+private class EditTax(name: String, rate: String) {
+    var name by mutableStateOf(name)
+    var rate by mutableStateOf(rate)
+}
+
+private fun discountOf(type: String, value: String): Discount? = value.toDoubleOrNull()?.takeIf { it > 0 }?.let { Discount(type, it) }
+private fun taxesOf(list: List<EditTax>): List<TaxRate> = list.mapNotNull { t -> val r = t.rate.toDoubleOrNull(); if (t.name.isBlank() || r == null || r <= 0) null else TaxRate(t.name.trim(), r) }
+
+/** Discount and tax inputs, shared by the invoice editor and the confirm dialog. */
+@Composable
+private fun AdjustFields(saved: List<SavedTax>, discType: String, onType: (String) -> Unit, discValue: String, onValue: (String) -> Unit, taxes: MutableList<EditTax>) {
+    Text("Discount", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 6.dp))
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+        FilterChip(selected = discType == "percent", onClick = { onType("percent") }, label = { Text("%") })
+        FilterChip(selected = discType == "amount", onClick = { onType("amount") }, label = { Text(AppConfig.CURRENCY) })
+        OutlinedTextField(discValue, { onValue(it.filter { c -> c.isDigit() || c == '.' }) }, label = { Text("None") }, singleLine = true, modifier = Modifier.weight(1f), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
+    }
+    Text("Taxes", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 6.dp))
+    taxes.forEachIndexed { i, t ->
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+            OutlinedTextField(t.name, { t.name = it }, label = { Text("Tax") }, singleLine = true, modifier = Modifier.weight(1.4f))
+            OutlinedTextField(t.rate, { t.rate = it.filter { c -> c.isDigit() || c == '.' } }, label = { Text("%") }, singleLine = true, modifier = Modifier.weight(1f), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
+            IconButton(onClick = { taxes.removeAt(i) }, modifier = Modifier.size(32.dp)) { Icon(Icons.Outlined.Close, "Remove tax", Modifier.size(16.dp)) }
+        }
+    }
+    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        items(saved.filter { st -> taxes.none { it.name == st.name } }) { st -> AssistChip(onClick = { taxes.add(EditTax(st.name, num(st.rate))) }, label = { Text("+ ${st.name} ${num(st.rate)}%") }) }
+        item { AssistChip(onClick = { taxes.add(EditTax("", "")) }, label = { Text("+ Other tax") }) }
+    }
 }
 
 private class EditLine(name: String, desc: String, qty: String, price: String) {
@@ -345,7 +428,11 @@ private fun InvoiceEditor(vm: MainViewModel, existing: Invoice?, type: String, o
     val lines = remember { mutableStateListOf<EditLine>().also { l -> existing?.items?.forEach { l.add(EditLine(it.name, it.desc, num(it.qty), num(it.price))) } } }
     var err by remember { mutableStateOf("") }
     var pickBooking by remember { mutableStateOf(false) }
+    var pickItem by remember { mutableStateOf(false) }
     val fees = vm.money?.fees ?: emptyList()
+    var discType by remember { mutableStateOf(existing?.discount?.type ?: "percent") }
+    var discValue by remember { mutableStateOf(existing?.discount?.let { num(it.value) } ?: "") }
+    val taxes = remember { mutableStateListOf<EditTax>().also { l -> existing?.taxes?.forEach { l.add(EditTax(it.name, num(it.rate))) } } }
 
     fun save(send: Boolean) {
         val items = lines.mapNotNull { l ->
@@ -357,7 +444,7 @@ private fun InvoiceEditor(vm: MainViewModel, existing: Invoice?, type: String, o
             else -> ""
         }
         if (err.isNotEmpty()) return
-        vm.saveInvoice(existing?.row ?: 0, type, client.trim(), email.trim(), phone.trim(), bookingRow, items, date, notes.trim(), send) { e ->
+        vm.saveInvoice(existing?.row ?: 0, type, client.trim(), email.trim(), phone.trim(), bookingRow, items, date, notes.trim(), send, discountOf(discType, discValue), taxesOf(taxes)) { e ->
             when (e) {
                 null -> onClose()
                 "no_email" -> err = "Saved, but there's no valid email address to send it to."
@@ -396,8 +483,18 @@ private fun InvoiceEditor(vm: MainViewModel, existing: Invoice?, type: String, o
                 items(fees) { f -> AssistChip(onClick = { lines.add(EditLine(f.name, f.desc, "1", num(f.price))) }, label = { Text("+ " + f.name) }) }
                 items(AppConfig.PACKAGES) { p -> AssistChip(onClick = { lines.add(EditLine(p.name, "", "1", p.price.toString())) }, label = { Text("+ " + p.name) }) }
             }
-            val total = lines.sumOf { (it.qty.toDoubleOrNull() ?: 1.0) * (it.price.toDoubleOrNull() ?: 0.0) }
-            Row { Text("Total", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium); Text(Fmt.cash(total), style = MaterialTheme.typography.titleMedium) }
+            OutlinedButton(onClick = { pickItem = true }, modifier = Modifier.fillMaxWidth()) { Text("Add a saved item") }
+            AdjustFields(vm.money?.taxes ?: emptyList(), discType, { discType = it }, discValue, { discValue = it }, taxes)
+            val tt = totals(
+                lines.map { LineItem(it.name, "", it.qty.toDoubleOrNull() ?: 1.0, it.price.toDoubleOrNull() ?: 0.0) },
+                discountOf(discType, discValue), taxesOf(taxes)
+            )
+            if (tt.discount > 0 || tt.taxes.isNotEmpty()) {
+                Row { Text("Subtotal", Modifier.weight(1f)); Text(Fmt.cash(tt.subtotal)) }
+                if (tt.discount > 0) Row { Text("Discount", Modifier.weight(1f)); Text("-" + Fmt.cash(tt.discount)) }
+                tt.taxes.forEach { (t, a) -> Row { Text("${t.name} (${num(t.rate)}%)", Modifier.weight(1f)); Text(Fmt.cash(a)) } }
+            }
+            Row { Text("Total", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium); Text(Fmt.cash(tt.total), style = MaterialTheme.typography.titleMedium) }
             OutlinedTextField(notes, { notes = it }, label = { Text("Notes (optional)") }, modifier = Modifier.fillMaxWidth(), minLines = 2)
             if (err.isNotEmpty()) Text(err, color = MaterialTheme.colorScheme.error)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -405,6 +502,28 @@ private fun InvoiceEditor(vm: MainViewModel, existing: Invoice?, type: String, o
                 Button(onClick = { save(true) }, enabled = !vm.busy, modifier = Modifier.weight(1f).height(50.dp)) { Text("Save & email") }
             }
         }
+    }
+
+    if (pickItem) {
+        AlertDialog(
+            onDismissRequest = { pickItem = false }, title = { Text("Add a saved item") },
+            text = {
+                LazyColumn {
+                    items(fees) { f ->
+                        Row(Modifier.fillMaxWidth().clickable { lines.add(EditLine(f.name, f.desc, "1", num(f.price))); pickItem = false }.padding(vertical = 10.dp)) {
+                            Column(Modifier.weight(1f)) { Text(f.name, fontWeight = FontWeight.SemiBold); if (f.desc.isNotBlank()) Text(f.desc, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1) }
+                            Text(Fmt.cash(f.price))
+                        }
+                    }
+                    items(AppConfig.PACKAGES) { p ->
+                        Row(Modifier.fillMaxWidth().clickable { lines.add(EditLine(p.name, "", "1", p.price.toString())); pickItem = false }.padding(vertical = 10.dp)) {
+                            Text(p.name + " package", Modifier.weight(1f), fontWeight = FontWeight.SemiBold); Text(Fmt.cash(p.price.toDouble()))
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { pickItem = false }) { Text("Cancel") } }
+        )
     }
 
     if (pickBooking) {
@@ -438,8 +557,14 @@ fun ConfirmBookingDialog(vm: MainViewModel, b: Booking, onDismiss: () -> Unit) {
     val custom = remember { mutableStateListOf<EditLine>() }
     var send by remember { mutableStateOf(b.email.isNotBlank()) }
     val base = bookingPrice(b)
-    val total = base + fees.filter { it.row in picked }.sumOf { it.price } +
-        custom.sumOf { (it.qty.toDoubleOrNull() ?: 1.0) * (it.price.toDoubleOrNull() ?: 0.0) }
+    var discType by remember { mutableStateOf("percent") }
+    var discValue by remember { mutableStateOf("") }
+    val taxes = remember { mutableStateListOf<EditTax>() }
+    val total = totals(
+        listOf(LineItem("", "", 1.0, base)) + fees.filter { it.row in picked }.map { LineItem("", "", 1.0, it.price) } +
+            custom.map { LineItem("", "", it.qty.toDoubleOrNull() ?: 1.0, it.price.toDoubleOrNull() ?: 0.0) },
+        discountOf(discType, discValue), taxesOf(taxes)
+    ).total
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Confirm ${b.name}'s booking") },
@@ -461,6 +586,7 @@ fun ConfirmBookingDialog(vm: MainViewModel, b: Booking, onDismiss: () -> Unit) {
                     }
                 }
                 TextButton(onClick = { custom.add(EditLine("", "", "1", "")) }) { Text("+ Add another item") }
+                AdjustFields(vm.money?.taxes ?: emptyList(), discType, { discType = it }, discValue, { discValue = it }, taxes)
                 HorizontalDivider(Modifier.padding(vertical = 6.dp))
                 Row { Text("Invoice total", Modifier.weight(1f), fontWeight = FontWeight.Bold); Text(Fmt.cash(total), fontWeight = FontWeight.Bold) }
                 if (b.email.isNotBlank()) Row(Modifier.fillMaxWidth().clickable { send = !send }, verticalAlignment = Alignment.CenterVertically) {
@@ -473,7 +599,7 @@ fun ConfirmBookingDialog(vm: MainViewModel, b: Booking, onDismiss: () -> Unit) {
             TextButton(onClick = {
                 val extras = fees.filter { it.row in picked }.map { LineItem(it.name, it.desc, 1.0, it.price) } +
                     custom.filter { it.name.isNotBlank() }.map { LineItem(it.name.trim(), "", it.qty.toDoubleOrNull()?.takeIf { q -> q > 0 } ?: 1.0, it.price.toDoubleOrNull() ?: 0.0) }
-                onDismiss(); vm.setStatus(b.row, "Confirmed", extras, send && b.email.isNotBlank())
+                onDismiss(); vm.setStatus(b.row, "Confirmed", extras, send && b.email.isNotBlank(), discount = discountOf(discType, discValue), taxes = taxesOf(taxes))
             }) { Text("Confirm") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }

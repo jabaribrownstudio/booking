@@ -46,16 +46,16 @@ class Store(context: Context) {
     fun getCache(key: String): String? = prefs.getString("cache_$key", null)
 
     fun signOut() {
-        prefs.edit().remove("cache_list").remove("cache_money").remove("mode").remove("username").remove("secret").remove("widget").remove("widgetName").remove("widgetAt").apply()
+        prefs.edit().remove("cache_list").remove("cache_money").remove("seenRows").remove("mode").remove("username").remove("secret").remove("widget").remove("widgetName").remove("widgetAt").apply()
     }
 
     /* ---- widget cache ---- */
-    class Item(val name: String, val pkg: String, val date: String, val start: String, val end: String, val status: String, val location: String)
+    class Item(val row: Int, val name: String, val pkg: String, val date: String, val start: String, val end: String, val status: String, val location: String)
 
     fun saveWidget(items: List<Booking>, who: String) {
         val a = JSONArray()
         items.forEach {
-            a.put(JSONObject().put("n", it.name).put("p", it.pkg).put("d", it.date).put("s", it.start).put("e", it.end).put("t", it.status).put("l", it.location))
+            a.put(JSONObject().put("r", it.row).put("n", it.name).put("p", it.pkg).put("d", it.date).put("s", it.start).put("e", it.end).put("t", it.status).put("l", it.location))
         }
         prefs.edit().putString("widget", a.toString()).putString("widgetName", who).putLong("widgetAt", System.currentTimeMillis()).apply()
     }
@@ -66,11 +66,15 @@ class Store(context: Context) {
             val a = JSONArray(prefs.getString("widget", "[]"))
             for (i in 0 until a.length()) {
                 val o = a.getJSONObject(i)
-                out.add(Item(o.optString("n"), o.optString("p"), o.optString("d"), o.optString("s"), o.optString("e"), o.optString("t"), o.optString("l")))
+                out.add(Item(o.optInt("r"), o.optString("n"), o.optString("p"), o.optString("d"), o.optString("s"), o.optString("e"), o.optString("t"), o.optString("l")))
             }
         } catch (e: Exception) { }
         return out
     }
+
+    /** Booking rows we have already told the owner about. Null until the first refresh. */
+    fun seenRows(): Set<Int>? = prefs.getString("seenRows", null)?.split(",")?.mapNotNull { it.toIntOrNull() }?.toSet()
+    fun setSeenRows(rows: Collection<Int>) = prefs.edit().putString("seenRows", rows.joinToString(",")).apply()
 
     val widgetUpdatedAt: Long get() = prefs.getLong("widgetAt", 0L)
 }

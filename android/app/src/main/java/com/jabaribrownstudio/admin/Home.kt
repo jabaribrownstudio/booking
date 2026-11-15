@@ -34,6 +34,7 @@ fun HomeScreen(vm: MainViewModel) {
         if (msg != null) { snack.showSnackbar(msg); vm.clearMessage() }
     }
     if (!canManage && (tab == 1 || tab == 3)) tab = 0
+    LaunchedEffect(vm.openAdd, vm.focusRow) { if (vm.openAdd || vm.focusRow > 0) tab = 0 }
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         snackbarHost = { SnackbarHost(snack) },

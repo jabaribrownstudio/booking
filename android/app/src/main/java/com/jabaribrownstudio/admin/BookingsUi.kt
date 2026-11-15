@@ -39,6 +39,10 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
@@ -131,6 +135,19 @@ fun BookingsTab(vm: MainViewModel, pad: PaddingValues) {
     }
     if (showAdd) AddBookingSheet(vm, onClose = { showAdd = false })
     confirming?.let { ConfirmBookingDialog(vm, it) { confirming = null } }
+    LaunchedEffect(vm.openAdd) { if (vm.openAdd) { showAdd = true; vm.openAdd = false } }
+    val focus = d?.bookings?.firstOrNull { it.row == vm.focusRow }
+    if (focus != null) {
+        ModalBottomSheet(onDismissRequest = { vm.focusRow = -1 }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = MaterialTheme.colorScheme.background) {
+            Column(Modifier.navigationBarsPadding().padding(horizontal = 16.dp).padding(bottom = 20.dp)) {
+                Text(Fmt.longDay(focus.localDate), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 8.dp))
+                BookingCard(focus, expanded = true, onToggle = { }, onStatus = { s, note ->
+                    vm.focusRow = -1
+                    if (s == "Confirmed" && d?.me?.isManager == true) confirming = focus else vm.setStatus(focus.row, s, comment = note)
+                })
+            }
+        }
+    }
 }
 
 @Composable

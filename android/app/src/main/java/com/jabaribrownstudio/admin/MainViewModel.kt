@@ -25,6 +25,9 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
     var loginError by mutableStateOf("")
     var filter by mutableStateOf("Upcoming")
     var openRow by mutableStateOf(-1)
+    /** Set by the widget and by notifications: show the add-booking form, or one booking. */
+    var openAdd by mutableStateOf(false)
+    var focusRow by mutableStateOf(-1)
 
     // editable copies for the availability screen
     var hoursDraft by mutableStateOf<Hours>(emptyMap())
@@ -94,7 +97,8 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
                 lastLoad = System.currentTimeMillis()
                 store.putCache("list", r.json.toString())
                 if (!hoursDirty) hoursDraft = d.hours
-                store.saveWidget(Sync.upcoming(d.bookings).take(30), d.me.name)
+                store.saveWidget(Sync.upcoming(d.bookings).take(40), d.me.name)
+                store.setSeenRows(d.bookings.map { it.row })
                 try { BookingsWidget().updateAll(app) } catch (e: Exception) { }
                 if (d.me.isManager && money == null) loadMoney()
             } else if (r != null) message = "Couldn't load your data."
@@ -133,14 +137,14 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun setStatus(row: Int, status: String, extras: List<LineItem>? = null, sendInvoice: Boolean = true, comment: String = "") {
+    fun setStatus(row: Int, status: String, extras: List<LineItem>? = null, sendInvoice: Boolean = true, comment: String = "", discount: Discount? = null, taxes: List<TaxRate> = emptyList()) {
         // Show the change at once; the refresh below corrects it if the server disagrees.
         data?.let { d -> data = d.copy(bookings = d.bookings.map { if (it.row == row) it.copy(status = status) else it }) }
         viewModelScope.launch {
             busy = true
             val d = JSONObject().put("row", row).put("status", status)
             if (comment.isNotBlank()) d.put("comment", comment.trim())
-            if (status == "Confirmed" && extras != null) d.put("invoice", JSONObject().put("extras", itemsJson(extras)).put("send", sendInvoice))
+            if (status == "Confirmed" && extras != null) d.put("invoice", JSONObject().put("extras", itemsJson(extras)).put("send", sendInvoice).put("discount", discountJson(discount)).put("taxes", taxesJson(taxes)))
             val r = act("admin_status", d)
             busy = false
             if (r != null) {
@@ -254,12 +258,13 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
     /** Saves an invoice or estimate. onDone gets null on success or an error code ("no_email", "invalid_input", "locked", "other"). */
     fun saveInvoice(
         row: Int, type: String, client: String, email: String, phone: String, bookingRow: Int, items: List<LineItem>,
-        date: String, notes: String, send: Boolean, onDone: (String?) -> Unit
+        date: String, notes: String, send: Boolean, discount: Discount?, taxes: List<TaxRate>, onDone: (String?) -> Unit
     ) {
         viewModelScope.launch {
             busy = true
             val d = JSONObject().put("type", type).put("client", client).put("email", email).put("phone", phone)
                 .put("bookingRow", bookingRow).put("items", itemsJson(items)).put("date", date).put("notes", notes).put("send", send)
+                .put("discount", discountJson(discount)).put("taxes", taxesJson(taxes))
             if (row > 0) d.put("row", row)
             val r = act("admin_inv_save", d)
             busy = false
@@ -351,10 +356,31 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun addFee(name: String, price: Double) {
+    fun addFee(name: String, desc: String, price: Double) {
         viewModelScope.launch {
-            val r = act("admin_fee_add", JSONObject().put("name", name).put("price", price))
-            moneyDone(r, "Fee added", "Couldn't add that fee.")
+            val r = act("admin_fee_add", JSONObject().put("name", name).put("desc", desc).put("price", price))
+            moneyDone(r, "Saved", "Couldn't save that item.")
+        }
+    }
+
+    fun updateFee(row: Int, name: String, desc: String, price: Double) {
+        viewModelScope.launch {
+            val r = act("admin_fee_update", JSONObject().put("row", row).put("name", name).put("desc", desc).put("price", price))
+            moneyDone(r, "Saved", "Couldn't save that item.")
+        }
+    }
+
+    fun addTax(name: String, rate: Double) {
+        viewModelScope.launch {
+            val r = act("admin_tax_add", JSONObject().put("name", name).put("rate", rate))
+            moneyDone(r, "Tax saved", "Couldn't save that tax.")
+        }
+    }
+
+    fun removeTax(row: Int) {
+        viewModelScope.launch {
+            val r = act("admin_tax_remove", JSONObject().put("row", row))
+            moneyDone(r, "Tax removed", "Couldn't remove it.")
         }
     }
 

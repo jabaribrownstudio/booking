@@ -27,17 +27,18 @@ object Sync {
             val r = Backend(store).call("admin_list")
             if (!r.ok) { BookingsWidget().updateAll(context); return null }
             val data = parseAdminData(r.json)
-            store.saveWidget(upcoming(data.bookings).take(30), data.me.name)
+            store.saveWidget(upcoming(data.bookings).take(40), data.me.name)
+            Notify.check(context, store, data.bookings)
             BookingsWidget().updateAll(context)
             data
         } catch (e: Exception) { null }
     }
 
     fun schedule(context: Context) {
-        val req = PeriodicWorkRequestBuilder<RefreshWorker>(30, TimeUnit.MINUTES)
+        val req = PeriodicWorkRequestBuilder<RefreshWorker>(15, TimeUnit.MINUTES)
             .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
             .build()
-        WorkManager.getInstance(context).enqueueUniquePeriodicWork("refresh", ExistingPeriodicWorkPolicy.KEEP, req)
+        WorkManager.getInstance(context).enqueueUniquePeriodicWork("refresh", ExistingPeriodicWorkPolicy.UPDATE, req)
     }
 }
 

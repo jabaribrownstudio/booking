@@ -63,7 +63,6 @@ fun SignInScreen(vm: MainViewModel) {
             modifier = Modifier.fillMaxWidth(0.7f).aspectRatio(462f / 224f), contentScale = ContentScale.Fit
         )
         Spacer(Modifier.height(20.dp))
-        Text("JB Studio Admin", style = MaterialTheme.typography.headlineMedium)
         Text(
             "Sign in to manage bookings and your availability.",
             style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,

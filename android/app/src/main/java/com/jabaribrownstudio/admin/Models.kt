@@ -21,7 +21,9 @@ data class Booking(
     val duration: Int,
     val location: String,
     val notes: String,
-    val handledBy: String
+    val handledBy: String,
+    val source: String = "",
+    val created: String = ""
 ) {
     val localDate: LocalDate? get() = try { LocalDate.parse(date) } catch (e: Exception) { null }
     val startTime: LocalTime? get() = parseTime(start)
@@ -72,7 +74,8 @@ fun parseAdminData(j: JSONObject): AdminData {
                 email = o.optString("email"), phone = o.optString("phone"), instagram = o.optString("instagram"),
                 pkg = o.optString("pkg"), price = o.optString("price"), date = o.optString("date"),
                 start = o.optString("start"), end = o.optString("end"), duration = o.optInt("duration"),
-                location = o.optString("location"), notes = o.optString("notes"), handledBy = o.optString("handledBy")
+                location = o.optString("location"), notes = o.optString("notes"), handledBy = o.optString("handledBy"),
+                source = o.optString("source"), created = o.optString("created")
             )
         )
     }
