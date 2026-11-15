@@ -386,13 +386,20 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** Makes an invoice from an estimate. onDone gets the new invoice's row. */
-    fun convertEstimate(row: Int, onDone: (Int) -> Unit = {}) {
+    /** Makes an invoice from an estimate, optionally creating a linked booking. onDone gets the new invoice's row; onError an error code ("slot_taken", ...). */
+    fun convertEstimate(row: Int, booking: JSONObject? = null, onError: (String) -> Unit = {}, onDone: (Int) -> Unit = {}) {
         viewModelScope.launch {
             busy = true
-            val r = act("admin_inv_convert", JSONObject().put("row", row))
+            val d = JSONObject().put("row", row)
+            if (booking != null) d.put("booking", booking)
+            val r = act("admin_inv_convert", d)
             busy = false
-            if (moneyDone(r, "Invoice #" + (r?.json?.optInt("number") ?: 0) + " created", "Couldn't convert it.")) onDone(r?.json?.optInt("row") ?: -1)
+            if (r == null) { onError("other"); return@launch }
+            if (!r.ok) { onError(r.error.ifBlank { "other" }); return@launch }
+            val made = r.json.optInt("booking") > 0
+            moneyDone(r, "Invoice #" + r.json.optInt("number") + " created" + (if (made) " and a booking was added" else ""), "Couldn't convert it.")
+            if (made) { loading = false; load() }
+            onDone(r.json.optInt("row"))
         }
     }
 

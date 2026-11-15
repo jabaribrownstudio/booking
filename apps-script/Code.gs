@@ -1254,12 +1254,21 @@ function moneyApi_(d) {
     case "admin_inv_convert": {
       var e = getInv_(d.row);
       if (!e || e.type !== "Estimate") return { ok: false, error: "invalid_input" };
-      var today = todayStr_();
+      var today = todayStr_(), linkRow = e.bookingRow, madeBooking = 0;
+      // Optionally create a booking from this estimate, so the invoice (and the estimate) are linked to it.
+      if (!linkRow && d.booking && d.booking.date) {
+        var bk = createBooking_({ name: e.client, email: e.email, phone: e.phone, date: d.booking.date, time: d.booking.time,
+          duration: d.booking.duration, location: d.booking.location || "", notes: "Created from estimate #" + e.number,
+          packageName: d.booking.pkg || (e.items[0] && e.items[0].name) || "Session", price: String(e.total), currency: CONFIG.CURRENCY_SYMBOL,
+          status: "Confirmed", notifyClient: false, force: d.booking.force === true }, true, me.name);
+        if (!bk || !bk.ok) return { ok: false, error: (bk && bk.error) || "booking_failed" };
+        linkRow = bk.row; madeBooking = bk.row;
+      }
       var ni = writeInv_({ row: 0, number: nextNumber_("Invoice"), type: "Invoice", status: "Draft", date: today, due: addDays_(today, CONFIG.PAYMENT_DUE_DAYS),
-        client: e.client, email: e.email, phone: e.phone, bookingRow: e.bookingRow, items: e.items, total: e.total, paid: 0, payments: [], notes: e.notes,
+        client: e.client, email: e.email, phone: e.phone, bookingRow: linkRow, items: e.items, total: e.total, paid: 0, payments: [], notes: e.notes,
         created: new Date().toISOString(), sent: "", from: e.number, discount: e.discount, taxes: e.taxes });
-      e.status = "Accepted"; writeInv_(e);
-      return { ok: true, row: ni.row, number: ni.number };
+      e.status = "Accepted"; e.bookingRow = linkRow; writeInv_(e);
+      return { ok: true, row: ni.row, number: ni.number, booking: madeBooking };
     }
 
     case "admin_inv_pdf": {

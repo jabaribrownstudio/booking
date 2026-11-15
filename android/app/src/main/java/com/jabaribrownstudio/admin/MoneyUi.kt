@@ -79,6 +79,7 @@ fun InvoicesTab(vm: MainViewModel, pad: PaddingValues) {
     var editing by remember { mutableStateOf<Invoice?>(null) }
     var creating by remember { mutableStateOf<String?>(null) }
     var viewing by remember { mutableIntStateOf(-1) }
+    var converting by remember { mutableStateOf<Invoice?>(null) }
     var menu by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { vm.loadMoney() }
 
@@ -166,7 +167,7 @@ fun InvoicesTab(vm: MainViewModel, pad: PaddingValues) {
                             if (!inv.isInvoice && inv.status != "Declined") {
                                 val made = m.invoices.firstOrNull { it.isInvoice && it.from == inv.number }
                                 if (made != null) TextButton(onClick = { section = "Invoices"; payFilter = "All"; viewing = made.row }, modifier = Modifier.padding(top = 4.dp)) { Text("View invoice #${made.number}") }
-                                else Button(onClick = { vm.convertEstimate(inv.row) { r -> section = "Invoices"; payFilter = "All"; viewing = r } }, enabled = !vm.busy, modifier = Modifier.fillMaxWidth().padding(top = 10.dp)) { Text("Convert to invoice") }
+                                else Button(onClick = { converting = inv }, enabled = !vm.busy, modifier = Modifier.fillMaxWidth().padding(top = 10.dp)) { Text("Convert to invoice") }
                             }
                             if (inv.isInvoice && inv.status in listOf("Sent", "Partial") && inv.due.isNotBlank() && inv.due < LocalDate.now().toString())
                                 Text("Overdue · ${Fmt.cash(inv.owing)} due", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = 6.dp))
@@ -189,6 +190,7 @@ fun InvoicesTab(vm: MainViewModel, pad: PaddingValues) {
     }
 
     val cur = m?.invoices?.firstOrNull { it.row == viewing }
+    converting?.let { e -> ConvertDialog(vm, e, onClose = { converting = null }) { r -> converting = null; section = "Invoices"; payFilter = "All"; viewing = r } }
     if (cur != null) InvoiceDetail(vm, cur, onClose = { viewing = -1 }, onEdit = { editing = cur; viewing = -1 }, onConverted = { r -> section = "Invoices"; payFilter = "All"; viewing = r })
     if (creating != null) InvoiceEditor(vm, null, creating!!) { creating = null }
     if (editing != null) InvoiceEditor(vm, editing, editing!!.type) { editing = null }
@@ -255,6 +257,8 @@ private fun InvoiceDetail(vm: MainViewModel, inv: Invoice, onClose: () -> Unit, 
     val ctx = LocalContext.current
     var paying by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
+    var converting by remember { mutableStateOf<Invoice?>(null) }
+    converting?.let { e -> ConvertDialog(vm, e, onClose = { converting = null }) { r -> converting = null; onConverted(r); onClose() } }
     ModalBottomSheet(onDismissRequest = onClose, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = MaterialTheme.colorScheme.surface) {
         Column(Modifier.verticalScroll(rememberScrollState()).navigationBarsPadding().padding(horizontal = 20.dp).padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -310,7 +314,7 @@ private fun InvoiceDetail(vm: MainViewModel, inv: Invoice, onClose: () -> Unit, 
             }
             Spacer(Modifier.height(4.dp))
             if (inv.isInvoice && inv.status != "Void" && inv.status != "Paid") Button(onClick = { paying = true }, modifier = Modifier.fillMaxWidth().height(48.dp)) { Text("Record payment") }
-            if (!inv.isInvoice && inv.status != "Declined" && m0(vm, inv) == null) Button(onClick = { vm.convertEstimate(inv.row) { r -> onConverted(r) }; onClose() }, modifier = Modifier.fillMaxWidth().height(48.dp)) { Text("Convert to invoice") }
+            if (!inv.isInvoice && inv.status != "Declined" && m0(vm, inv) == null) Button(onClick = { converting = inv }, modifier = Modifier.fillMaxWidth().height(48.dp)) { Text("Convert to invoice") }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick = { vm.sendInvoice(inv.row) }, enabled = !vm.busy && inv.status != "Void", modifier = Modifier.weight(1f)) { Text(if (inv.sent.isBlank()) "Email it" else "Email again") }
                 OutlinedButton(onClick = { vm.fetchPdf(inv.row) { f -> openFile(ctx, f) } }, enabled = !vm.busy, modifier = Modifier.weight(1f)) { Text("View PDF") }
@@ -665,3 +669,67 @@ fun ConfirmBookingDialog(vm: MainViewModel, b: Booking, onDismiss: () -> Unit) {
 }
 
 private fun m0(vm: MainViewModel, inv: Invoice): Invoice? = vm.money?.invoices?.firstOrNull { it.isInvoice && it.from == inv.number }
+
+
+/** Turns an estimate into an invoice, and can also create a booking so the two are linked (cancelling that booking then voids the invoice). */
+@Composable
+private fun ConvertDialog(vm: MainViewModel, e: Invoice, onClose: () -> Unit, onDone: (Int) -> Unit) {
+    val ctx = LocalContext.current
+    val linked = e.bookingRow > 0
+    var create by remember { mutableStateOf(false) }
+    var date by remember { mutableStateOf<LocalDate?>(null) }
+    var time by remember { mutableStateOf<java.time.LocalTime?>(null) }
+    var duration by remember { mutableStateOf("60") }
+    var location by remember { mutableStateOf("") }
+    var force by remember { mutableStateOf(false) }
+    var err by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onClose,
+        title = { Text("Convert estimate #${e.number} to an invoice") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (linked) Text("This estimate is already linked to a booking, so the invoice will be linked to it too.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                else {
+                    Row(Modifier.fillMaxWidth().clickable { create = !create }, verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = create, onCheckedChange = { create = it })
+                        Text("Also create a booking for ${e.client}")
+                    }
+                    if (create) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton(modifier = Modifier.weight(1f), onClick = {
+                                val d = date ?: LocalDate.now()
+                                DatePickerDialog(ctx, { _, y, m, day -> date = LocalDate.of(y, m + 1, day) }, d.year, d.monthValue - 1, d.dayOfMonth).show()
+                            }) { Text(date?.let { it.dayOfMonth.toString() + "/" + it.monthValue + "/" + it.year } ?: "Pick date") }
+                            OutlinedButton(modifier = Modifier.weight(1f), onClick = {
+                                val t = time ?: java.time.LocalTime.of(10, 0)
+                                android.app.TimePickerDialog(ctx, { _, h, m -> time = java.time.LocalTime.of(h, m) }, t.hour, t.minute, false).show()
+                            }) { Text(time?.let { Fmt.time(it) } ?: "Pick time") }
+                        }
+                        OutlinedTextField(duration, { duration = it.filter { c -> c.isDigit() } }, label = { Text("Minutes") }, singleLine = true, modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
+                        OutlinedTextField(location, { location = it }, label = { Text("Location (optional)") }, modifier = Modifier.fillMaxWidth())
+                        Text("The booking is created as confirmed and no email is sent for it.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        if (err == "slot_taken") Row(Modifier.fillMaxWidth().clickable { force = !force }, verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(checked = force, onCheckedChange = { force = it }); Text("Book it anyway (overlaps another booking)")
+                        }
+                    }
+                }
+                if (err.isNotEmpty()) Text(when (err) {
+                    "slot_taken" -> "That time overlaps another booking."
+                    "pick" -> "Choose a date and time for the booking."
+                    else -> "Couldn't convert it. Try again."
+                }, color = MaterialTheme.colorScheme.error)
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = !vm.busy, onClick = {
+                val d = date; val t = time
+                if (create && !linked && (d == null || t == null)) { err = "pick"; return@TextButton }
+                val b = if (create && !linked && d != null && t != null) org.json.JSONObject().put("date", d.toString())
+                    .put("time", String.format("%02d:%02d", t.hour, t.minute)).put("duration", duration.toIntOrNull() ?: 60)
+                    .put("location", location.trim()).put("force", force) else null
+                vm.convertEstimate(e.row, b, onError = { err = it }) { r -> onDone(r) }
+            }) { Text("Convert") }
+        },
+        dismissButton = { TextButton(onClick = onClose) { Text("Cancel") } }
+    )
+}
