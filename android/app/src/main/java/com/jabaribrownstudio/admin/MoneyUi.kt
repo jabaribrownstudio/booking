@@ -485,6 +485,7 @@ private fun InvoiceEditor(vm: MainViewModel, existing: Invoice?, type: String, o
     var phone by remember { mutableStateOf(existing?.phone ?: "") }
     var bookingRow by remember { mutableIntStateOf(existing?.bookingRow ?: 0) }
     var date by remember { mutableStateOf(existing?.date ?: LocalDate.now().toString()) }
+    var due by remember { mutableStateOf(existing?.due?.takeIf { it.isNotBlank() } ?: (existing?.date ?: LocalDate.now().toString())) }
     var notes by remember { mutableStateOf(existing?.notes ?: "") }
     val lines = remember { mutableStateListOf<EditLine>().also { l -> existing?.items?.forEach { l.add(EditLine(it.name, it.desc, num(it.qty), num(it.price))) } } }
     var err by remember { mutableStateOf("") }
@@ -505,7 +506,7 @@ private fun InvoiceEditor(vm: MainViewModel, existing: Invoice?, type: String, o
             else -> ""
         }
         if (err.isNotEmpty()) return
-        vm.saveInvoice(existing?.row ?: 0, type, client.trim(), email.trim(), phone.trim(), bookingRow, items, date, notes.trim(), send, discountOf(discType, discValue), taxesOf(taxes)) { e ->
+        vm.saveInvoice(existing?.row ?: 0, type, client.trim(), email.trim(), phone.trim(), bookingRow, items, date, notes.trim(), send, discountOf(discType, discValue), taxesOf(taxes), due) { e ->
             when (e) {
                 null -> onClose()
                 "no_email" -> err = "Saved, but there's no valid email address to send it to."
@@ -523,7 +524,10 @@ private fun InvoiceEditor(vm: MainViewModel, existing: Invoice?, type: String, o
             OutlinedTextField(client, { client = it }, label = { Text("Client name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(email, { email = it }, label = { Text("Email") }, singleLine = true, modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email))
             OutlinedTextField(phone, { phone = it }, label = { Text("Phone (optional)") }, singleLine = true, modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone))
-            OutlinedButton(onClick = { pickDate(ctx, date) { date = it } }, modifier = Modifier.fillMaxWidth()) { Text("Date: " + Fmt.date(date)) }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = { pickDate(ctx, date) { nd -> if (due == date) due = nd else if (due < nd) due = nd; date = nd } }, modifier = Modifier.weight(1f)) { Text("Date: " + Fmt.date(date)) }
+                OutlinedButton(onClick = { pickDate(ctx, due) { due = it } }, modifier = Modifier.weight(1f)) { Text((if (type == "Estimate") "Valid until: " else "Due: ") + Fmt.date(due)) }
+            }
 
             Text("Items", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 6.dp))
             lines.forEachIndexed { i, l ->
@@ -611,6 +615,9 @@ fun ConfirmBookingDialog(vm: MainViewModel, b: Booking, onDismiss: () -> Unit) {
     val picked = remember { androidx.compose.runtime.mutableStateMapOf<Int, String>() }
     val custom = remember { mutableStateListOf<EditLine>() }
     var pickItem by remember { mutableStateOf(false) }
+    val ctx = LocalContext.current
+    var invDate by remember { mutableStateOf(LocalDate.now().toString()) }
+    var invDue by remember { mutableStateOf(LocalDate.now().toString()) }
     var send by remember { mutableStateOf(b.email.isNotBlank()) }
     val base = bookingPrice(b)
     var discType by remember { mutableStateOf("percent") }
@@ -646,6 +653,10 @@ fun ConfirmBookingDialog(vm: MainViewModel, b: Booking, onDismiss: () -> Unit) {
                 }
                 OutlinedButton(onClick = { custom.add(EditLine("", "", "1", "")) }, modifier = Modifier.fillMaxWidth()) { Text("+ Add a custom item") }
                 AdjustFields(vm.money?.taxes ?: emptyList(), discType, { discType = it }, discValue, { discValue = it }, taxes)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 6.dp)) {
+                    OutlinedButton(onClick = { pickDate(ctx, invDate) { nd -> if (invDue == invDate || invDue < nd) invDue = nd; invDate = nd } }, modifier = Modifier.weight(1f)) { Text("Invoice date: " + Fmt.date(invDate)) }
+                    OutlinedButton(onClick = { pickDate(ctx, invDue) { invDue = it } }, modifier = Modifier.weight(1f)) { Text("Due: " + Fmt.date(invDue)) }
+                }
                 HorizontalDivider(Modifier.padding(vertical = 6.dp))
                 Row { Text("Invoice total", Modifier.weight(1f), fontWeight = FontWeight.Bold); Text(Fmt.cash(total), fontWeight = FontWeight.Bold) }
                 if (b.email.isNotBlank()) Row(Modifier.fillMaxWidth().clickable { send = !send }, verticalAlignment = Alignment.CenterVertically) {
@@ -659,7 +670,7 @@ fun ConfirmBookingDialog(vm: MainViewModel, b: Booking, onDismiss: () -> Unit) {
                 Button(onClick = {
                     val extras = fees.filter { it.row in picked }.map { LineItem(it.name, it.desc, picked[it.row]?.toDoubleOrNull()?.takeIf { q -> q > 0 } ?: it.qty, it.price) } +
                         custom.filter { it.name.isNotBlank() }.map { LineItem(it.name.trim(), "", it.qty.toDoubleOrNull()?.takeIf { q -> q > 0 } ?: 1.0, it.price.toDoubleOrNull() ?: 0.0) }
-                    onDismiss(); vm.setStatus(b.row, "Confirmed", extras, send && b.email.isNotBlank(), discount = discountOf(discType, discValue), taxes = taxesOf(taxes))
+                    onDismiss(); vm.setStatus(b.row, "Confirmed", extras, send && b.email.isNotBlank(), discount = discountOf(discType, discValue), taxes = taxesOf(taxes), invDate = invDate, invDue = invDue)
                 }, modifier = Modifier.fillMaxWidth().height(48.dp)) { Text("Confirm and invoice") }
                 androidx.compose.material3.FilledTonalButton(onClick = {
                     onDismiss(); vm.setStatus(b.row, "Confirmed", noInvoice = true)

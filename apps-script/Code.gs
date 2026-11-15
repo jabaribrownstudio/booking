@@ -600,7 +600,7 @@ function adminApi_(d) {
       if (before !== d.status) {
         var invOpt = d.invoice || null, inv = null;
         if (d.status === "Confirmed" && !(invOpt && invOpt.skip === true) && (invOpt || CONFIG.AUTO_INVOICE_ON_CONFIRM)) {
-          try { inv = createInvoiceForBooking_(row, invOpt ? invOpt.extras : [], invOpt ? invOpt.discount : null, invOpt ? invOpt.taxes : []); } catch (ie) { console.error("invoice: " + ie); }
+          try { inv = createInvoiceForBooking_(row, invOpt ? invOpt.extras : [], invOpt ? invOpt.discount : null, invOpt ? invOpt.taxes : [], invOpt ? invOpt.date : "", invOpt ? invOpt.due : ""); } catch (ie) { console.error("invoice: " + ie); }
         }
         var why = d.status === "Cancelled" ? cleanText_(d.comment, 500) : "";
         if (why) {
@@ -908,13 +908,13 @@ function voidInvoicesForBooking_(row) {
   return res;
 }
 
-function createInvoiceForBooking_(row, extras, discount, taxes) {
+function createInvoiceForBooking_(row, extras, discount, taxes, dateIn, dueIn) {
   var existing = invoiceForBooking_(row);
   if (existing) return existing;
   var v = getSheet_().getRange(row, 1, 1, HEADERS.length).getValues()[0];
-  var date = todayStr_(), items = [bookingItem_(v)].concat(cleanItems_(extras));
+  var date = isYmd_(dateIn) ? dateIn : todayStr_(), items = [bookingItem_(v)].concat(cleanItems_(extras));
   var inv = ({ row: 0, number: nextNumber_("Invoice"), type: "Invoice", status: "Draft", date: date,
-    due: addDays_(date, CONFIG.PAYMENT_DUE_DAYS), client: String(v[COL.NAME - 1]), email: String(v[COL.EMAIL - 1] || ""),
+    due: isYmd_(dueIn) ? dueIn : addDays_(date, CONFIG.PAYMENT_DUE_DAYS), client: String(v[COL.NAME - 1]), email: String(v[COL.EMAIL - 1] || ""),
     phone: String(v[4] || ""), bookingRow: row, items: items, total: 0, paid: 0, payments: [], notes: "",
     created: new Date().toISOString(), sent: "", from: 0, discount: cleanDiscount_(discount), taxes: cleanTaxes_(taxes) });
   recalc_(inv); return writeInv_(inv);

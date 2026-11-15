@@ -177,7 +177,7 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun setStatus(row: Int, status: String, extras: List<LineItem>? = null, sendInvoice: Boolean = true, comment: String = "", discount: Discount? = null, taxes: List<TaxRate> = emptyList(), noInvoice: Boolean = false) {
+    fun setStatus(row: Int, status: String, extras: List<LineItem>? = null, sendInvoice: Boolean = true, comment: String = "", discount: Discount? = null, taxes: List<TaxRate> = emptyList(), noInvoice: Boolean = false, invDate: String = "", invDue: String = "") {
         // Show the change at once; the refresh below corrects it if the server disagrees.
         data?.let { d -> data = d.copy(bookings = d.bookings.map { if (it.row == row) it.copy(status = status) else it }) }
         viewModelScope.launch {
@@ -185,7 +185,7 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
             val d = JSONObject().put("row", row).put("status", status)
             if (comment.isNotBlank()) d.put("comment", comment.trim())
             if (status == "Confirmed" && noInvoice) d.put("invoice", JSONObject().put("skip", true))
-            else if (status == "Confirmed" && extras != null) d.put("invoice", JSONObject().put("extras", itemsJson(extras)).put("send", sendInvoice).put("discount", discountJson(discount)).put("taxes", taxesJson(taxes)))
+            else if (status == "Confirmed" && extras != null) d.put("invoice", JSONObject().put("extras", itemsJson(extras)).put("send", sendInvoice).put("discount", discountJson(discount)).put("taxes", taxesJson(taxes)).put("date", invDate).put("due", invDue))
             val r = act("admin_status", d)
             busy = false
             if (r != null) {
@@ -304,12 +304,12 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
     /** Saves an invoice or estimate. onDone gets null on success or an error code ("no_email", "invalid_input", "locked", "other"). */
     fun saveInvoice(
         row: Int, type: String, client: String, email: String, phone: String, bookingRow: Int, items: List<LineItem>,
-        date: String, notes: String, send: Boolean, discount: Discount?, taxes: List<TaxRate>, onDone: (String?) -> Unit
+        date: String, notes: String, send: Boolean, discount: Discount?, taxes: List<TaxRate>, due: String = "", onDone: (String?) -> Unit
     ) {
         viewModelScope.launch {
             busy = true
             val d = JSONObject().put("type", type).put("client", client).put("email", email).put("phone", phone)
-                .put("bookingRow", bookingRow).put("items", itemsJson(items)).put("date", date).put("notes", notes).put("send", send)
+                .put("bookingRow", bookingRow).put("items", itemsJson(items)).put("date", date).put("due", due).put("notes", notes).put("send", send)
                 .put("discount", discountJson(discount)).put("taxes", taxesJson(taxes))
             if (row > 0) d.put("row", row)
             val r = act("admin_inv_save", d)
