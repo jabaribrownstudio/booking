@@ -564,7 +564,7 @@
   });
 
   /* ---------- accounting + extras (money.js) ---------- */
-  if (window.StudioMoney) window.StudioMoney.init({ api, S, toast, esc, ymd, parseYmd, fail, reload: () => load(true) });
+  if (window.StudioMoney) window.StudioMoney.init({ api, S, toast, esc, ymd, parseYmd, t12, fail, reload: () => load(true) });
   const isManager = () => S.me && S.me.role !== "Staff";
 
   /* ---------- start ---------- */

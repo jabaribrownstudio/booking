@@ -18,7 +18,8 @@ const ACTION_MIN = {
   // invoices, estimates and money
   admin_money: "Manager", admin_inv_save: "Manager", admin_inv_send: "Manager", admin_inv_pay: "Manager", admin_inv_unpay: "Manager",
   admin_inv_status: "Manager", admin_inv_convert: "Manager", admin_inv_remind: "Manager", admin_inv_pdf: "Manager", admin_inv_receipt: "Manager", admin_inv_delete: "Manager",
-  admin_fee_add: "Manager", admin_fee_remove: "Manager", admin_fee_update: "Manager", admin_tax_add: "Manager", admin_tax_remove: "Manager"
+  admin_fee_add: "Manager", admin_fee_remove: "Manager", admin_fee_update: "Manager", admin_tax_add: "Manager", admin_tax_remove: "Manager",
+  admin_clients: "Manager", admin_client_save: "Manager", admin_client_delete: "Manager"
 };
 
 const enc = new TextEncoder();

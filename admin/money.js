@@ -3,7 +3,7 @@
 (function () {
   "use strict";
   let A = null; // helpers from admin.js (api, S, toast, esc, ...)
-  const M = { invoices: [], fees: [], taxes: [], finance: null, currency: "J$", year: 0, section: "Invoices", pay: "All", loaded: false, loading: false };
+  const M = { invoices: [], fees: [], taxes: [], finance: null, currency: "J$", year: 0, section: "Invoices", pay: "All", loaded: false, loading: false, clients: null, cq: "" };
   const r2 = (n) => Math.round(n * 100) / 100;
   const num = (v) => { const n = parseFloat(String(v == null ? "" : v).replace(/[^0-9.\-]/g, "")); return isNaN(n) ? 0 : n; };
   const qtyText = (q) => String(q).replace(/\.0+$/, "");
@@ -50,7 +50,7 @@
     if (M.loading) return; M.loading = true;
     try {
       const j = await A.api("admin_money", M.year ? { year: M.year } : {});
-      if (j && j.ok) { M.invoices = j.invoices || []; M.fees = j.fees || []; M.taxes = j.taxes || []; M.finance = j.finance; M.currency = j.currency || M.currency; M.year = j.finance.year; M.loaded = true; render(); }
+      if (j && j.ok) { M.invoices = j.invoices || []; M.fees = j.fees || []; M.taxes = j.taxes || []; M.finance = j.finance; M.currency = j.currency || M.currency; M.year = j.finance.year; M.loaded = true; render(); if (!M.clients) loadClients(true); }
       else if (!quiet) A.toast("Couldn't load accounting.", true);
     } catch (e) { A.fail(e); }
     M.loading = false;
@@ -66,8 +66,9 @@
       stat("Outstanding", cashShort(f.outstanding)) + stat("Overdue", cashShort(f.overdue), f.overdue > 0 ? "bad" : "") + "</div>";
     h += '<div class="card"><div class="bars">' + f.months.map((v, i) => '<div class="bar" title="' + MON[i] + ": " + cashShort(v) + '"><i style="height:' + Math.round(v / max * 100) + '%"></i><span>' + MON[i][0] + "</span></div>").join("") + "</div>" +
       '<label class="yr">Year <select id="m-year">' + f.years.map((y) => "<option" + (y === f.year ? " selected" : "") + ">" + y + "</option>").join("") + "</select></label></div>";
-    h += '<div class="seg" id="m-sections">' + ["Invoices", "Estimates", "Products & Services"].map((s) => '<button type="button" data-s="' + A.esc(s) + '"' + (s === M.section ? ' class="on"' : "") + ">" + A.esc(s) + "</button>").join("") + "</div>";
-    if (M.section === "Products & Services") h += itemsHtml();
+    h += '<div class="seg" id="m-sections">' + ["Invoices", "Estimates", "Products & Services", "Clients"].map((s) => '<button type="button" data-s="' + A.esc(s) + '"' + (s === M.section ? ' class="on"' : "") + ">" + A.esc(s) + "</button>").join("") + "</div>";
+    if (M.section === "Clients") h += clientsHtml();
+    else if (M.section === "Products & Services") h += itemsHtml();
     else {
       h += '<div class="acts"><button type="button" class="btn primary" id="m-new">+ New ' + (M.section === "Invoices" ? "invoice" : "estimate") + "</button></div>";
       if (M.section === "Invoices") h += '<div class="seg sub" id="m-pay">' + ["All", "Unpaid", "Paid"].map((s) => '<button type="button" data-p="' + s + '"' + (s === M.pay ? ' class="on"' : "") + ">" + s + "</button>").join("") + "</div>";
@@ -83,6 +84,46 @@
     return '<button type="button" class="invrow" data-inv="' + i.row + '"><div><b>#' + i.number + " " + A.esc(i.client) + "</b><small>" + fdate(i.date) +
       (made ? " · invoice #" + made.number : "") + (overdue ? ' · <span class="bad-t">Overdue ' + cash(i.total - i.paid) + "</span>" : "") +
       '</small></div><div class="r"><b>' + cash(i.total) + '</b><span class="pill st-' + A.esc(i.status) + '">' + A.esc(i.status) + "</span></div></button>";
+  }
+  /* ---------- clients ---------- */
+  async function loadClients(quiet) {
+    try {
+      const j = await A.api("admin_clients");
+      if (j && j.ok) { M.clients = j.clients; render(); } else if (!quiet) A.toast("Couldn't load clients.", true);
+    } catch (e) { A.fail(e); }
+  }
+  function clientsHtml() {
+    let h = '<div class="acts"><button type="button" class="btn primary" id="m-client-new">+ New client</button></div><label class="cq">Search clients<input id="m-cq" type="search" value="' + A.esc(M.cq) + '" placeholder="Name, email or phone"></label>';
+    if (!M.clients) return h + '<div class="skeleton"></div>';
+    const q = M.cq.trim().toLowerCase();
+    const list = q ? M.clients.filter((c) => (c.name + " " + c.email + " " + c.phone).toLowerCase().indexOf(q) > -1) : M.clients;
+    if (!list.length) return h + '<div class="empty">' + (M.clients.length ? "No clients match that." : "No clients yet. They're added automatically from bookings and invoices.") + "</div>";
+    return h + '<div id="m-clist">' + list.map((c) => { const n = c.bookings.filter((b) => b.status !== "Cancelled").length;
+      return '<button type="button" class="invrow" data-client="' + c.row + '"><div><b>' + A.esc(c.name) + "</b><small>" + A.esc([c.email, c.phone].filter(Boolean).join(" · ") || "No contact details") + (c.owing > 0.004 ? ' · <span class="bad-t">Owes ' + cash(c.owing) + "</span>" : "") + '</small></div><div class="r"><b>' + n + " booking" + (n === 1 ? "" : "s") + "</b>" + (c.billed ? "<small>" + cash(c.billed) + "</small>" : "") + "</div></button>"; }).join("") + "</div>";
+  }
+  function clientDialog(c) {
+    const m = modal(head(c ? "Edit client" : "New client") + '<label>Name<input id="cl-name" type="text" maxlength="100"></label><div class="grid2"><label>Email <span class="muted">(optional)</span><input id="cl-email" type="email" autocapitalize="none"></label><label>Phone <span class="muted">(optional)</span><input id="cl-phone" type="tel"></label></div><label>Instagram <span class="muted">(optional)</span><input id="cl-ig" type="text"></label><label>Notes <span class="muted">(optional)</span><textarea id="cl-notes" rows="3"></textarea></label><p class="err" id="cl-err"></p><button class="btn primary block" id="cl-save" type="button">Save</button>');
+    m.q("#cl-name").value = c ? c.name : ""; m.q("#cl-email").value = c ? c.email : ""; m.q("#cl-phone").value = c ? c.phone : ""; m.q("#cl-ig").value = c ? c.instagram : ""; m.q("#cl-notes").value = c ? c.notes : "";
+    m.q("#cl-save").addEventListener("click", (e) => savedBusy(e.target, "Saving…", async () => {
+      const name = m.q("#cl-name").value.trim(); if (!name) { m.q("#cl-err").textContent = "Enter the client's name."; return; }
+      const d = { name, email: m.q("#cl-email").value.trim(), phone: m.q("#cl-phone").value.trim(), instagram: m.q("#cl-ig").value.trim(), notes: m.q("#cl-notes").value.trim() };
+      if (c) d.row = c.row;
+      const j = await A.api("admin_client_save", d);
+      if (j.ok) { m.close(); A.toast("Client saved"); loadClients(true); }
+      else m.q("#cl-err").textContent = j.error === "exists" ? "This client is already saved." : j.error === "invalid_input" ? "Check the details. The email may be wrong." : "Couldn't save. Try again.";
+    }));
+  }
+  function clientDetail(c) {
+    let h = head(c.name) + '<p class="muted">' + [c.email && '<a href="mailto:' + A.esc(c.email) + '">' + A.esc(c.email) + "</a>", c.phone && '<a href="tel:' + A.esc(c.phone.replace(/[^\d+]/g, "")) + '">' + A.esc(c.phone) + "</a>", c.instagram && "@" + A.esc(c.instagram.replace(/^@/, ""))].filter(Boolean).join(" · ") + "</p>" + (c.notes ? "<p>" + A.esc(c.notes) + "</p>" : "");
+    h += '<div class="stats"><div class="stat"><small>Billed</small><b>' + cash(c.billed) + '</b></div><div class="stat"><small>Paid</small><b>' + cash(c.paid) + '</b></div><div class="stat' + (c.owing > 0.004 ? " bad" : "") + '"><small>Owing</small><b>' + cash(c.owing) + "</b></div></div>";
+    h += '<b class="lbl">Bookings (' + c.bookings.length + ")</b>" + (c.bookings.length ? c.bookings.map((b) => '<div class="li"><span><b>' + A.esc(b.pkg || "Session") + "</b><small>" + fdate(b.date) + (b.start ? " · " + A.t12(b.start) : "") + '</small></span><span class="pill ' + A.esc(b.status) + '">' + A.esc(b.status) + "</span></div>").join("") : '<p class="muted">No bookings yet.</p>');
+    h += '<b class="lbl">Invoices and estimates (' + c.invoices.length + ")</b>" + (c.invoices.length ? c.invoices.map((i) => '<button type="button" class="li linkrow" data-openinv="' + i.row + '"><span><b>' + (i.type === "Estimate" ? "Estimate #" : "Invoice #") + i.number + "</b><small>" + fdate(i.date) + " · " + cash(i.total) + '</small></span><span class="pill st-' + A.esc(i.status) + '">' + A.esc(i.status) + "</span></button>").join("") : '<p class="muted">None yet.</p>');
+    h += '<div class="acts"><button type="button" class="btn primary" id="cd-inv">New invoice</button><button type="button" class="btn" id="cd-edit">Edit</button><button type="button" class="btn bad" id="cd-del">Delete</button></div>';
+    const m = modal(h, true);
+    m.q("#cd-inv").addEventListener("click", () => { m.close(); editor(null, "Invoice", { client: c.name, email: c.email, phone: c.phone }); });
+    m.q("#cd-edit").addEventListener("click", () => { m.close(); clientDialog(c); });
+    m.q("#cd-del").addEventListener("click", () => { if (!confirm("Delete " + c.name + "? This removes the client record only. Their bookings and invoices stay.")) return; A.api("admin_client_delete", { row: c.row }).then((j) => { if (j.ok) { m.close(); A.toast("Client deleted"); loadClients(true); } else A.toast("Couldn't delete the client.", true); }).catch(A.fail); });
+    m.el.addEventListener("click", (e) => { const o = e.target.closest("[data-openinv]"); if (o) { m.close(); M.section = "Invoices"; M.pay = "All"; render(); detail(+o.dataset.openinv); } });
   }
   function itemsHtml() {
     let h = '<div class="acts"><button type="button" class="btn primary" id="m-item-new">+ Add product or service</button></div>';
@@ -145,6 +186,7 @@
     const inv = existing || prefill || {};
     const bookings = A.S.bookings.filter((b) => b.status !== "Cancelled");
     const m = modal(head((existing ? "Edit " : "New ") + (est ? "estimate" : "invoice") + (existing ? " #" + existing.number : "")) +
+      (M.clients && M.clients.length ? '<label>Saved client <span class="muted">(optional)</span><select id="e-pickclient"><option value="">Choose a saved client…</option>' + M.clients.map((c) => '<option value="' + c.row + '">' + A.esc(c.name + (c.email ? " · " + c.email : "")) + "</option>").join("") + "</select></label>" : "") +
       '<label>Client name<input id="e-client" type="text" maxlength="100"></label><div class="grid2"><label>Email<input id="e-email" type="email" autocapitalize="none"></label><label>Phone<input id="e-phone" type="tel"></label></div>' +
       '<label>Linked booking <span class="muted">(optional)</span><select id="e-book"><option value="0">None</option>' + bookings.map((b) => '<option value="' + b.row + '">' + A.esc(b.name + " · " + b.pkg + " · " + b.date) + "</option>").join("") + "</select></label>" +
       '<div class="grid2"><label>Date<input id="e-date" type="date"></label><label>' + (est ? "Valid until" : "Due") + '<input id="e-due" type="date"></label></div>' +
@@ -171,6 +213,8 @@
       if (!readLines(box).length) box.insertAdjacentHTML("beforeend", lineRow({ name: b.pkg || "Photography session", desc: b.duration ? "Duration: " + b.duration + " minutes" : "", qty: 1, price: num(b.price) }));
       recalc();
     });
+    const pc = m.q("#e-pickclient");
+    if (pc) pc.addEventListener("change", () => { const c = M.clients.find((x) => String(x.row) === pc.value); if (c) { set("#e-client", c.name); set("#e-email", c.email); set("#e-phone", c.phone); } });
     m.q("#e-date").addEventListener("change", () => { const d = m.q("#e-date").value, du = m.q("#e-due"); if (d && (!du.value || du.value < d)) du.value = d; });
     recalc();
     const save = (send) => (e) => savedBusy(e.target, "Saving…", async () => {
@@ -298,9 +342,12 @@
     document.addEventListener("click", (e) => {
       const root = $("money-root"); if (!root || !root.contains(e.target)) return;
       const sec = e.target.closest("[data-s]"), pay = e.target.closest("[data-p]"), inv = e.target.closest("[data-inv]");
-      if (sec) { M.section = sec.dataset.s; render(); return; }
+      if (sec) { M.section = sec.dataset.s; render(); if (M.section === "Clients") loadClients(true); return; }
       if (pay) { M.pay = pay.dataset.p; render(); return; }
       if (inv) { detail(+inv.dataset.inv); return; }
+      const cl = e.target.closest("[data-client]");
+      if (cl) { clientDetail(M.clients.find((c) => String(c.row) === cl.dataset.client)); return; }
+      if (e.target.closest("#m-client-new")) { clientDialog(null); return; }
       if (e.target.closest("#m-new")) { editor(null, M.section === "Estimates" ? "Estimate" : "Invoice"); return; }
       if (e.target.closest("#m-item-new")) { itemDialog(null); return; }
       if (e.target.closest("#m-tax-new")) { taxDialog(); return; }
@@ -309,8 +356,9 @@
       if (fd) { const f = M.fees.find((x) => String(x.row) === fd.dataset.fd); if (confirm("Delete “" + f.name + "” from Products & Services?")) A.api("admin_fee_remove", { row: f.row }).then((j) => { A.toast(j.ok ? "Deleted" : "Couldn't delete it.", !j.ok); load(true); }).catch(A.fail); return; }
       if (td) { const t = M.taxes.find((x) => String(x.row) === td.dataset.td); if (confirm("Delete the tax “" + t.name + "”?")) A.api("admin_tax_remove", { row: t.row }).then((j) => { A.toast(j.ok ? "Deleted" : "Couldn't delete it.", !j.ok); load(true); }).catch(A.fail); }
     });
+    document.addEventListener("input", (e) => { if (e.target.id === "m-cq") { M.cq = e.target.value; const pos = e.target.selectionStart; render(); const el = $("m-cq"); if (el) { el.focus(); el.setSelectionRange(pos, pos); } } });
     document.addEventListener("change", (e) => { if (e.target.id === "m-year") { M.year = +e.target.value; load(true); } });
   }
 
-  window.StudioMoney = { init, load, render, confirmDialog, state: M, modal, head, savedBusy };
+  window.StudioMoney = { init, load, loadClients, render, confirmDialog, state: M, modal, head, savedBusy };
 })();

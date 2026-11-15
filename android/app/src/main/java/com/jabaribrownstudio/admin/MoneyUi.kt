@@ -57,7 +57,7 @@ private fun openFile(ctx: Context, f: File) {
 }
 
 @Composable
-private fun StatusChip(status: String) {
+fun StatusChip(status: String) {
     val dark = isSystemInDarkTheme()
     val key = when (status) { "Paid", "Accepted" -> "Confirmed"; "Partial", "Sent" -> "Pending"; else -> "Cancelled" }
     Text(
@@ -81,10 +81,16 @@ fun InvoicesTab(vm: MainViewModel, pad: PaddingValues) {
     var viewing by remember { mutableIntStateOf(-1) }
     var converting by remember { mutableStateOf<Invoice?>(null) }
     var menu by remember { mutableStateOf(false) }
+    var clientQuery by remember { mutableStateOf("") }
+    var clientOpen by remember { mutableStateOf<Client?>(null) }
+    var clientEdit by remember { mutableStateOf<Client?>(null) }
+    var clientNew by remember { mutableStateOf(false) }
+    var invoiceFor by remember { mutableStateOf<Client?>(null) }
     LaunchedEffect(Unit) { vm.loadMoney() }
+    LaunchedEffect(section) { if (section == "Clients") vm.loadClients() }
 
     Box(Modifier.fillMaxSize().padding(pad)) {
-        PullToRefreshBox(isRefreshing = vm.moneyLoading, onRefresh = { vm.loadMoney() }, modifier = Modifier.fillMaxSize()) {
+        PullToRefreshBox(isRefreshing = vm.moneyLoading || vm.clientsLoading, onRefresh = { vm.loadMoney(); if (section == "Clients") vm.loadClients() }, modifier = Modifier.fillMaxSize()) {
             LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 96.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 item {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -103,7 +109,12 @@ fun InvoicesTab(vm: MainViewModel, pad: PaddingValues) {
                             FilterChip(selected = section == "Invoices", onClick = { section = "Invoices" }, label = { Text("Invoices") })
                             FilterChip(selected = section == "Estimates", onClick = { section = "Estimates" }, label = { Text("Estimates") })
                             FilterChip(selected = section == "Items", onClick = { section = "Items" }, label = { Text("Products & Services") })
+                            FilterChip(selected = section == "Clients", onClick = { section = "Clients" }, label = { Text("Clients") })
                         }
+                    }
+                    if (section == "Clients") {
+                        item { OutlinedTextField(clientQuery, { clientQuery = it }, label = { Text("Search clients") }, singleLine = true, modifier = Modifier.fillMaxWidth()) }
+                        clientItems(vm, clientQuery) { clientOpen = it }
                     }
                     if (section == "Invoices") item {
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -141,14 +152,14 @@ fun InvoicesTab(vm: MainViewModel, pad: PaddingValues) {
                         }
                         item { OutlinedButton(onClick = { taxDialog = true }, modifier = Modifier.fillMaxWidth()) { Text("+ Add a tax") } }
                     }
-                    val list = if (section == "Items") emptyList() else m.invoices.filter { (it.type == "Estimate") == (section == "Estimates") }.filter {
+                    val list = if (section == "Items" || section == "Clients") emptyList() else m.invoices.filter { (it.type == "Estimate") == (section == "Estimates") }.filter {
                         section == "Estimates" || when (payFilter) {
                             "Unpaid" -> it.status in listOf("Draft", "Sent", "Partial")
                             "Paid" -> it.status == "Paid"
                             else -> true
                         }
                     }
-                    if (section != "Items" && list.isEmpty()) item { Text(if (section == "Invoices" && payFilter != "All") "No ${payFilter.lowercase()} invoices." else "Nothing here yet.", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(16.dp)) }
+                    if (section != "Items" && section != "Clients" && list.isEmpty()) item { Text(if (section == "Invoices" && payFilter != "All") "No ${payFilter.lowercase()} invoices." else "Nothing here yet.", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(16.dp)) }
                     items(list, key = { it.type + it.row }) { inv ->
                         Column(
                             Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(MaterialTheme.colorScheme.surface).clickable { viewing = inv.row }.padding(16.dp)
@@ -184,6 +195,7 @@ fun InvoicesTab(vm: MainViewModel, pad: PaddingValues) {
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                 DropdownMenuItem(text = { Text("New invoice") }, onClick = { menu = false; creating = "Invoice" })
                 DropdownMenuItem(text = { Text("New estimate") }, onClick = { menu = false; creating = "Estimate" })
+                DropdownMenuItem(text = { Text("New client") }, onClick = { menu = false; section = "Clients"; clientNew = true })
                 DropdownMenuItem(text = { Text("New Product or Service") }, onClick = { menu = false; section = "Items"; newItem = true })
             }
         }
@@ -192,6 +204,12 @@ fun InvoicesTab(vm: MainViewModel, pad: PaddingValues) {
     val cur = m?.invoices?.firstOrNull { it.row == viewing }
     converting?.let { e -> ConvertDialog(vm, e, onClose = { converting = null }) { r -> converting = null; section = "Invoices"; payFilter = "All"; viewing = r } }
     if (cur != null) InvoiceDetail(vm, cur, onClose = { viewing = -1 }, onEdit = { editing = cur; viewing = -1 }, onConverted = { r -> section = "Invoices"; payFilter = "All"; viewing = r })
+    clientOpen?.let { c0 ->
+        val c = vm.clients?.firstOrNull { it.row == c0.row } ?: c0
+        ClientDetail(vm, c, onClose = { clientOpen = null }, onEdit = { clientEdit = c; clientOpen = null }, onInvoice = { invoiceFor = c; clientOpen = null }, onOpenInvoice = { r -> clientOpen = null; section = "Invoices"; payFilter = "All"; viewing = r })
+    }
+    if (clientNew || clientEdit != null) ClientDialog(vm, clientEdit) { clientNew = false; clientEdit = null }
+    if (invoiceFor != null) InvoiceEditor(vm, null, "Invoice", prefill = invoiceFor) { invoiceFor = null }
     if (creating != null) InvoiceEditor(vm, null, creating!!) { creating = null }
     if (editing != null) InvoiceEditor(vm, editing, editing!!.type) { editing = null }
     if (newItem || itemDialog != null) ItemDialog(vm, itemDialog) { newItem = false; itemDialog = null }
@@ -479,11 +497,12 @@ private fun num(d: Double): String = if (d == Math.floor(d)) d.toLong().toString
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun InvoiceEditor(vm: MainViewModel, existing: Invoice?, type: String, onClose: () -> Unit) {
+private fun InvoiceEditor(vm: MainViewModel, existing: Invoice?, type: String, prefill: Client? = null, onClose: () -> Unit) {
     val ctx = LocalContext.current
-    var client by remember { mutableStateOf(existing?.client ?: "") }
-    var email by remember { mutableStateOf(existing?.email ?: "") }
-    var phone by remember { mutableStateOf(existing?.phone ?: "") }
+    var client by remember { mutableStateOf(existing?.client ?: prefill?.name ?: "") }
+    var email by remember { mutableStateOf(existing?.email ?: prefill?.email ?: "") }
+    var phone by remember { mutableStateOf(existing?.phone ?: prefill?.phone ?: "") }
+    var pickClient by remember { mutableStateOf(false) }
     var bookingRow by remember { mutableIntStateOf(existing?.bookingRow ?: 0) }
     var date by remember { mutableStateOf(existing?.date ?: LocalDate.now().toString()) }
     var due by remember { mutableStateOf(existing?.due?.takeIf { it.isNotBlank() } ?: (existing?.date ?: LocalDate.now().toString())) }
@@ -518,10 +537,12 @@ private fun InvoiceEditor(vm: MainViewModel, existing: Invoice?, type: String, o
         }
     }
 
+    if (pickClient) ClientPicker(vm, onPick = { c -> client = c.name; email = c.email; phone = c.phone; pickClient = false }, onClose = { pickClient = false })
     ModalBottomSheet(onDismissRequest = onClose, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = MaterialTheme.colorScheme.surface) {
         Column(Modifier.verticalScroll(rememberScrollState()).imePadding().navigationBarsPadding().padding(horizontal = 20.dp).padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(if (existing == null) "New ${type.lowercase()}" else "Edit ${type.lowercase()} #${existing.number}", style = MaterialTheme.typography.titleLarge)
             if (existing == null) OutlinedButton(onClick = { pickBooking = true }, modifier = Modifier.fillMaxWidth()) { Text(if (bookingRow > 0) "Linked to a booking · change" else "Fill from a booking") }
+            if (existing == null) OutlinedButton(onClick = { pickClient = true }, modifier = Modifier.fillMaxWidth()) { Text("Choose a saved client") }
             OutlinedTextField(client, { client = it }, label = { Text("Client name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(email, { email = it }, label = { Text("Email") }, singleLine = true, modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email))
             OutlinedTextField(phone, { phone = it }, label = { Text("Phone (optional)") }, singleLine = true, modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone))

@@ -36,6 +36,8 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
     var hoursDirty by mutableStateOf(false)
 
     var money by mutableStateOf<MoneyData?>(null)
+    var clients by mutableStateOf<List<Client>?>(null)
+    var clientsLoading by mutableStateOf(false)
     var moneyYear by mutableStateOf(0)
     var moneyLoading by mutableStateOf(false)
 
@@ -317,6 +319,35 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
             if (r != null && r.ok) { val m = parseMoney(r.json); money = m; moneyYear = m.finance.year; if (m.finance.year == java.time.LocalDate.now().year) store.putCache("money", r.json.toString()) }
             else if (r != null) message = "Couldn't load invoices."
             moneyLoading = false
+        }
+    }
+
+    fun loadClients() {
+        viewModelScope.launch {
+            clientsLoading = true
+            val r = act("admin_clients")
+            if (r != null && r.ok) clients = withContext(Dispatchers.Default) { parseClients(r.json) } else if (r != null) message = "Couldn't load clients."
+            clientsLoading = false
+        }
+    }
+
+    /** onDone gets null on success or "exists", "invalid_input", "other". */
+    fun saveClient(row: Int, name: String, email: String, phone: String, instagram: String, notes: String, onDone: (String?) -> Unit) {
+        viewModelScope.launch {
+            busy = true
+            val d = JSONObject().put("name", name).put("email", email).put("phone", phone).put("instagram", instagram).put("notes", notes)
+            if (row > 0) d.put("row", row)
+            val r = act("admin_client_save", d)
+            busy = false
+            if (r == null) { onDone("other"); return@launch }
+            if (r.ok) { message = "Client saved"; loadClients(); onDone(null) } else onDone(if (r.error == "exists" || r.error == "invalid_input") r.error else "other")
+        }
+    }
+
+    fun deleteClient(row: Int) {
+        viewModelScope.launch {
+            val r = act("admin_client_delete", JSONObject().put("row", row))
+            if (r != null) { message = if (r.ok) "Client deleted" else "Couldn't delete the client."; loadClients() }
         }
     }
 

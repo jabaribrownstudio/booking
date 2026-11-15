@@ -438,6 +438,7 @@ function createBooking_(d, admin, by) {
     }
   } catch (mailErr) { console.error("Mail error: " + mailErr); }
 
+  try { ensureClient_({ name: name, email: email, phone: phone, instagram: String(d.instagram || "") }); } catch (ce) { console.error("client: " + ce); }
   return { ok: true, row: r };
 }
 
@@ -716,7 +717,7 @@ function adminApi_(d) {
 
 /* ---------- invoices, estimates and money tracking ---------- */
 
-var TAB_INV = "Invoices", TAB_FEES = "Products & Services", TAB_TAXES = "Taxes";
+var TAB_INV = "Invoices", TAB_FEES = "Products & Services", TAB_TAXES = "Taxes", TAB_CLIENTS = "Clients";
 var INV_HEADERS = ["Number", "Type", "Status", "Date", "Due / valid until", "Client", "Email", "Phone", "Booking row",
                    "Items (JSON)", "Total", "Paid", "Payments (JSON)", "Notes", "Created", "Sent", "From estimate", "Discount (JSON)", "Taxes (JSON)"];
 
@@ -729,7 +730,7 @@ var PACKAGE_DETAILS = {
 };
 
 var MONEY_ACTIONS = { admin_fee_update: 1, admin_tax_add: 1, admin_tax_remove: 1, admin_inv_receipt: 1, admin_money: 1, admin_inv_save: 1, admin_inv_send: 1, admin_inv_pay: 1, admin_inv_unpay: 1, admin_inv_status: 1,
-                      admin_inv_convert: 1, admin_inv_remind: 1, admin_inv_pdf: 1, admin_inv_delete: 1, admin_fee_add: 1, admin_fee_remove: 1 };
+                      admin_inv_convert: 1, admin_inv_remind: 1, admin_inv_pdf: 1, admin_inv_delete: 1, admin_fee_add: 1, admin_fee_remove: 1, admin_clients: 1, admin_client_save: 1, admin_client_delete: 1 };
 
 function safeJson_(v, fallback) { try { var x = JSON.parse(String(v)); return x == null ? fallback : x; } catch (e) { return fallback; } }
 function tz_() { return Session.getScriptTimeZone(); }
@@ -1191,6 +1192,7 @@ function moneyApi_(d, me) {
       inv.due = isYmd_(d.due) ? d.due : addDays_(inv.date, type === "Estimate" ? CONFIG.ESTIMATE_VALID_DAYS : CONFIG.PAYMENT_DUE_DAYS);
       setPaidStatus_(inv);
       writeInv_(inv);
+      try { ensureClient_({ name: inv.client, email: inv.email, phone: inv.phone }); } catch (ce) { console.error("client: " + ce); }
       var sent = false;
       if (d.send) {
         if (!validEmail_(inv.email)) return { ok: false, error: "no_email", row: inv.row, number: inv.number };
@@ -1293,6 +1295,33 @@ function moneyApi_(d, me) {
       var x = getInv_(d.row);
       if (!x || (x.type === "Invoice" && x.status !== "Draft" && x.status !== "Void")) return { ok: false, error: "invalid_input" };
       invSheet_().deleteRow(x.row);
+      return { ok: true };
+    }
+
+    case "admin_clients": return { ok: true, clients: clientsWithHistory_() };
+
+    case "admin_client_save": {
+      var cn = cleanText_(d.name, 100), ce = clean_(d.email, 150);
+      if (!cn || (ce && !validEmail_(ce))) return { ok: false, error: "invalid_input" };
+      var cs = clientsSheet_(), cr = parseInt(d.row, 10) || 0;
+      var rec = { name: cn, email: ce, phone: clean_(d.phone, 40), instagram: clean_(d.instagram, 60), notes: cleanText_(d.notes, 1000) };
+      if (cr) {
+        if (!(cr >= 2 && cr <= cs.getLastRow())) return { ok: false, error: "invalid_input" };
+        var keepCreated = cs.getRange(cr, 6).getValue();
+        cs.getRange(cr, 1, 1, 6).setValues([[rec.name, rec.email, rec.phone, rec.instagram, rec.notes, keepCreated || todayStr_()]]);
+        return { ok: true, row: cr };
+      }
+      var dup = readClients_().filter(function (c) { return clientMatch_(c, rec); })[0];
+      if (dup) return { ok: false, error: "exists", row: dup.row };
+      var nr = Math.max(cs.getLastRow() + 1, 2);
+      cs.getRange(nr, 1, 1, 6).setValues([[rec.name, rec.email, rec.phone, rec.instagram, rec.notes, todayStr_()]]);
+      return { ok: true, row: nr };
+    }
+
+    case "admin_client_delete": {
+      var ds = clientsSheet_(), dr = parseInt(d.row, 10);
+      if (!(dr >= 2 && dr <= ds.getLastRow())) return { ok: false, error: "invalid_input" };
+      ds.deleteRow(dr); // only the client record; their bookings and invoices stay
       return { ok: true };
     }
 
@@ -1488,4 +1517,89 @@ function push_(title, body, data) {
 function testPush() {
   var n = push_("Test alert", "Instant alerts are working.", { type: "test" });
   console.log("Sent to " + n + " phone(s). Registered phones: " + Object.keys(pushTokens_()).length);
+}
+
+
+/* ================= Clients ================= */
+var CLIENT_HEADERS = ["Name", "Email", "Phone", "Instagram", "Notes", "Added"];
+
+function clientsSheet_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet(), sh = ss.getSheetByName(TAB_CLIENTS);
+  if (sh) return sh;
+  sh = ss.insertSheet(TAB_CLIENTS);
+  sh.getRange(1, 1, 1, CLIENT_HEADERS.length).setValues([CLIENT_HEADERS]).setFontWeight("bold");
+  sh.setFrozenRows(1); sh.setColumnWidth(1, 200); sh.setColumnWidth(2, 220); sh.setColumnWidth(3, 140); sh.setColumnWidth(5, 320);
+  return sh;
+}
+
+function emailKey_(e) { e = String(e || "").trim().toLowerCase(); return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e) ? e : ""; }
+function phoneKey_(p) { var x = String(p || "").replace(/\D/g, ""); return x.length >= 7 ? x.slice(-7) : ""; }
+function nameKey_(n) { return String(n || "").trim().toLowerCase().replace(/\s+/g, " "); }
+
+/** Same person? Same email, or same phone number, or (when neither has either) the same name. */
+function clientMatch_(c, p) {
+  var ce = emailKey_(c.email), pe = emailKey_(p.email);
+  if (ce && pe && ce === pe) return true;
+  var cp = phoneKey_(c.phone), pp = phoneKey_(p.phone);
+  if (cp && pp && cp === pp) return true;
+  if (!ce && !pe && !cp && !pp) return nameKey_(p.name) !== "" && nameKey_(c.name) === nameKey_(p.name);
+  return false;
+}
+
+function readClients_() {
+  clientsSheet_();
+  return rows_(TAB_CLIENTS, 6).map(function (r, i) {
+    return { row: i + 2, name: String(r.d[0]), email: String(r.d[1]), phone: String(r.d[2]), instagram: String(r.d[3]), notes: String(r.d[4]), created: String(r.d[5]) };
+  }).filter(function (c) { return c.name; });
+}
+
+/** Adds the person to Clients unless they are already there. Returns the client's row. */
+function ensureClient_(p) {
+  var name = String(p.name || "").trim(); if (!name) return 0;
+  var list = readClients_(), hit = list.filter(function (c) { return clientMatch_(c, p); })[0];
+  if (hit) {
+    // Fill in details we didn't have yet.
+    var sh0 = clientsSheet_();
+    if (!hit.email && emailKey_(p.email)) sh0.getRange(hit.row, 2).setValue(String(p.email).trim());
+    if (!hit.phone && phoneKey_(p.phone)) sh0.getRange(hit.row, 3).setValue(String(p.phone).trim());
+    if (!hit.instagram && p.instagram) sh0.getRange(hit.row, 4).setValue(String(p.instagram).trim());
+    return hit.row;
+  }
+  var sh = clientsSheet_(), r = Math.max(sh.getLastRow() + 1, 2);
+  sh.getRange(r, 1, 1, 6).setValues([[clean_(name, 100), emailKey_(p.email) ? String(p.email).trim() : "", clean_(p.phone, 40), clean_(p.instagram || "", 60), "", todayStr_()]]);
+  return r;
+}
+
+/** Every client with their bookings and invoices. Also adds anyone from past bookings or invoices who isn't saved yet. */
+function clientsWithHistory_() {
+  var bookings = adminList_(true).bookings, invoices = readInv_();
+  var clients = readClients_(), added = [];
+  function known(p) { return clients.some(function (c) { return clientMatch_(c, p); }) || added.some(function (c) { return clientMatch_(c, p); }); }
+  bookings.forEach(function (b) {
+    var p = { name: b.name, email: b.email, phone: b.phone, instagram: b.instagram };
+    if (p.name && !known(p)) added.push({ name: p.name, email: emailKey_(p.email) ? p.email : "", phone: p.phone || "", instagram: p.instagram || "", notes: "", created: todayStr_() });
+  });
+  invoices.forEach(function (i) {
+    var p = { name: i.client, email: i.email, phone: i.phone };
+    if (p.name && !known(p)) added.push({ name: p.name, email: emailKey_(p.email) ? p.email : "", phone: p.phone || "", instagram: "", notes: "", created: todayStr_() });
+  });
+  if (added.length) {
+    var sh = clientsSheet_(), start = Math.max(sh.getLastRow() + 1, 2);
+    sh.getRange(start, 1, added.length, 6).setValues(added.map(function (c) { return [clean_(c.name, 100), c.email, clean_(c.phone, 40), clean_(c.instagram, 60), "", c.created]; }));
+    added.forEach(function (c, k) { c.row = start + k; });
+    clients = clients.concat(added);
+  }
+  return clients.map(function (c) {
+    var bk = bookings.filter(function (b) { return clientMatch_(c, { name: b.name, email: b.email, phone: b.phone }); })
+      .map(function (b) { return { row: b.row, date: b.date, start: b.start, pkg: b.pkg, status: b.status, price: b.price }; })
+      .sort(function (a, b) { return a.date < b.date ? 1 : a.date > b.date ? -1 : 0; });
+    var iv = invoices.filter(function (i) { return clientMatch_(c, { name: i.client, email: i.email, phone: i.phone }); })
+      .map(function (i) { return { row: i.row, number: i.number, type: i.type, status: i.status, date: i.date, total: i.total, paid: i.paid }; })
+      .sort(function (a, b) { return a.date < b.date ? 1 : a.date > b.date ? -1 : b.number - a.number; });
+    var billed = 0, paid = 0;
+    iv.forEach(function (i) { if (i.type === "Invoice" && i.status !== "Void") { billed += i.total; paid += i.paid; } });
+    c.bookings = bk; c.invoices = iv;
+    c.billed = Math.round(billed * 100) / 100; c.paid = Math.round(paid * 100) / 100; c.owing = Math.round((billed - paid) * 100) / 100;
+    return c;
+  }).sort(function (a, b) { return nameKey_(a.name) < nameKey_(b.name) ? -1 : 1; });
 }
