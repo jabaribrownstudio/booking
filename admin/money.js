@@ -126,7 +126,7 @@
     m.el.addEventListener("click", (e) => { const o = e.target.closest("[data-openinv]"); if (o) { m.close(); M.section = "Invoices"; M.pay = "All"; render(); detail(+o.dataset.openinv); } });
   }
   function itemsHtml() {
-    let h = '<div class="acts"><button type="button" class="btn primary" id="m-item-new">+ Add product or service</button></div>';
+    let h = '<div class="acts"><button type="button" class="btn primary" id="m-item-new">+ New Product or Service</button></div>';
     h += M.fees.length ? M.fees.map((f) => '<div class="invrow static"><div><b>' + A.esc(f.name) + "</b><small>" + A.esc((f.desc || "").split("\n")[0]) + "</small><small>Quantity " + qtyText(f.qty) + '</small></div><div class="r"><b>' + cash(f.price) + '</b><span><button type="button" class="btn sm" data-fe="' + f.row + '">Edit</button> <button type="button" class="btn sm bad" data-fd="' + f.row + '">Delete</button></span></div></div>').join("") : '<div class="empty">No products or services yet.</div>';
     h += "<h2>Taxes</h2>" + (M.taxes.length ? M.taxes.map((t) => '<div class="invrow static"><div><b>' + A.esc(t.name) + "</b><small>" + qtyText(t.rate) + '%</small></div><div class="r"><button type="button" class="btn sm bad" data-td="' + t.row + '">Delete</button></div></div>').join("") : '<p class="muted">No saved taxes.</p>') +
       '<div class="acts"><button type="button" class="btn" id="m-tax-new">+ Add tax</button></div>';
@@ -135,7 +135,7 @@
 
   /* ---------- products, services, taxes ---------- */
   function itemDialog(f) {
-    const m = modal(head(f ? "Edit item" : "New product or service") + '<label>Name<input id="f-name" type="text" maxlength="100"></label><label>Description <span class="muted">(optional)</span><textarea id="f-desc" rows="3"></textarea></label>' +
+    const m = modal(head(f ? "Edit Item" : "New Product or Service") + '<label>Name<input id="f-name" type="text" maxlength="100"></label><label>Description <span class="muted">(optional)</span><textarea id="f-desc" rows="3"></textarea></label>' +
       '<div class="grid2"><label>Price<input id="f-price" type="number" min="0" step="0.01"></label><label>Quantity<input id="f-qty" type="number" min="0" step="any"></label></div><p class="err" id="f-err"></p><button class="btn primary block" id="f-save" type="button">Save</button>');
     m.q("#f-name").value = f ? f.name : ""; m.q("#f-desc").value = f ? f.desc : ""; m.q("#f-price").value = f ? f.price : ""; m.q("#f-qty").value = f ? f.qty : 1;
     m.q("#f-save").addEventListener("click", (e) => savedBusy(e.target, "Saving…", async () => {
@@ -148,7 +148,7 @@
     }));
   }
   function taxDialog() {
-    const m = modal(head("New tax") + '<label>Name<input id="t-n" type="text" maxlength="40" placeholder="GCT"></label><label>Rate (%)<input id="t-r" type="number" min="0" max="100" step="any"></label><p class="err" id="t-err"></p><button class="btn primary block" id="t-save" type="button">Save</button>');
+    const m = modal(head("New Tax") + '<label>Name<input id="t-n" type="text" maxlength="40" placeholder="GCT"></label><label>Rate (%)<input id="t-r" type="number" min="0" max="100" step="any"></label><p class="err" id="t-err"></p><button class="btn primary block" id="t-save" type="button">Save</button>');
     m.q("#t-save").addEventListener("click", (e) => savedBusy(e.target, "Saving…", async () => {
       const name = m.q("#t-n").value.trim(), rate = parseFloat(m.q("#t-r").value);
       if (!name || !(rate > 0 && rate <= 100)) { m.q("#t-err").textContent = "Enter a name and a rate between 0 and 100."; return; }
