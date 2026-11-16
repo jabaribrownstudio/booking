@@ -70,7 +70,7 @@
     if (M.section === "Clients") h += clientsHtml();
     else if (M.section === "Products & Services") h += itemsHtml();
     else {
-      h += '<div class="acts"><button type="button" class="btn primary" id="m-new">+ New ' + (M.section === "Invoices" ? "invoice" : "estimate") + "</button></div>";
+      h += '<div class="acts"><button type="button" class="btn primary" id="m-new">+ New ' + (M.section === "Invoices" ? "Invoice" : "Estimate") + "</button></div>";
       if (M.section === "Invoices") h += '<div class="seg sub" id="m-pay">' + ["All", "Unpaid", "Paid"].map((s) => '<button type="button" data-p="' + s + '"' + (s === M.pay ? ' class="on"' : "") + ">" + s + "</button>").join("") + "</div>";
       const list = M.invoices.filter((i) => (M.section === "Estimates" ? i.type === "Estimate" : i.type === "Invoice" && (M.pay === "All" || (M.pay === "Unpaid" ? ["Draft", "Sent", "Partial"].indexOf(i.status) > -1 : i.status === "Paid"))));
       h += list.length ? list.map(rowHtml).join("") : '<div class="empty">Nothing here yet.</div>';
@@ -185,7 +185,7 @@
     type = existing ? existing.type : type; const est = type === "Estimate";
     const inv = existing || prefill || {};
     const bookings = A.S.bookings.filter((b) => b.status !== "Cancelled");
-    const m = modal(head((existing ? "Edit " : "New ") + (est ? "estimate" : "invoice") + (existing ? " #" + existing.number : "")) +
+    const m = modal(head((existing ? "Edit " : "New ") + (est ? "Estimate" : "Invoice") + (existing ? " #" + existing.number : "")) +
       (M.clients && M.clients.length ? '<label>Saved client <span class="muted">(optional)</span><select id="e-pickclient"><option value="">Choose a saved client…</option>' + M.clients.map((c) => '<option value="' + c.row + '">' + A.esc(c.name + (c.email ? " · " + c.email : "")) + "</option>").join("") + "</select></label>" : "") +
       '<label>Client name<input id="e-client" type="text" maxlength="100"></label><div class="grid2"><label>Email<input id="e-email" type="email" autocapitalize="none"></label><label>Phone<input id="e-phone" type="tel"></label></div>' +
       '<label>Linked booking <span class="muted">(optional)</span><select id="e-book"><option value="0">None</option>' + bookings.map((b) => '<option value="' + b.row + '">' + A.esc(b.name + " · " + b.pkg + " · " + b.date) + "</option>").join("") + "</select></label>" +

@@ -107,8 +107,8 @@ fun InvoicesTab(vm: MainViewModel, pad: PaddingValues) {
                     item {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             listOf("Invoices" to "Invoices", "Estimates" to "Estimates", "Items" to "Services", "Clients" to "Clients").forEach { (k, l) ->
-                                FilterChip(selected = section == k, onClick = { section = k }, modifier = Modifier.weight(1f),
-                                    label = { Text(l, Modifier.fillMaxWidth(), maxLines = 1, textAlign = androidx.compose.ui.text.style.TextAlign.Center) })
+                                FilterChip(selected = section == k, onClick = { section = k }, modifier = Modifier.weight(1f).height(48.dp),
+                                    label = { Text(l, Modifier.fillMaxWidth(), maxLines = 1, style = MaterialTheme.typography.titleSmall, textAlign = androidx.compose.ui.text.style.TextAlign.Center) })
                             }
                         }
                     }
