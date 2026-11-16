@@ -29,6 +29,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import java.io.File
 import java.time.LocalDate
@@ -106,9 +107,9 @@ fun InvoicesTab(vm: MainViewModel, pad: PaddingValues) {
                     item { Summary(vm, m.finance) }
                     item {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            listOf("Invoices" to "Invoices", "Estimates" to "Estimates", "Items" to "Services", "Clients" to "Clients").forEach { (k, l) ->
+                            listOf("Invoices" to "Invoices", "Estimates" to "Estimate", "Items" to "Services", "Clients" to "Clients").forEach { (k, l) ->
                                 FilterChip(selected = section == k, onClick = { section = k }, modifier = Modifier.weight(1f).height(48.dp),
-                                    label = { Text(l, Modifier.fillMaxWidth(), maxLines = 1, style = MaterialTheme.typography.titleSmall, textAlign = androidx.compose.ui.text.style.TextAlign.Center) })
+                                    label = { Text(l, Modifier.fillMaxWidth(), maxLines = 1, softWrap = false, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, textAlign = androidx.compose.ui.text.style.TextAlign.Center) })
                             }
                         }
                     }
