@@ -385,7 +385,7 @@
       '<div class="stack"><button class="btn bad block" id="cx-go" type="button">Cancel booking</button><button class="btn block" data-x type="button">Keep it</button></div>');
     m.q("#cx-go").addEventListener("click", (e) => M.savedBusy(e.target, "Cancelling…", async () => {
       const j = await api("admin_status", { row: b.row, status: "Cancelled", comment: m.q("#cx-note").value.trim() });
-      if (j.ok) { m.close(); toast("Booking cancelled" + (j.voided ? " and its invoice was voided" : "") + (j.kept ? ". Its invoice has payments, so it was left as is." : "")); S.open = null; await load(true); if (window.StudioMoney) window.StudioMoney.load(true); }
+      if (j.ok) { m.close(); toast("Booking cancelled" + (j.voided ? " and its invoice or estimate was voided and deleted" : "") + (j.kept ? ". Its invoice has payments, so it was left as is." : "")); S.open = null; await load(true); if (window.StudioMoney) window.StudioMoney.load(true); }
       else toast("Couldn't update that booking.", true);
     }));
   }

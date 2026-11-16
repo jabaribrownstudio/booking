@@ -615,7 +615,7 @@ function adminApi_(d) {
         var vr = d.status === "Cancelled" ? voidInvoicesForBooking_(row) : { voided: 0, kept: 0 };
         if (d.notifyClient !== false) sendStatusEmail_(sh, row, inv && !(invOpt && invOpt.send === false) ? inv : null, why);
         syncCalendar_(sh, row);
-        return { ok: true, voided: vr.voided, kept: vr.kept };
+        return { ok: true, voided: vr.voided, kept: vr.kept, estimates: vr.estimates };
       }
       syncCalendar_(sh, row);
       return { ok: true };
@@ -901,15 +901,22 @@ function invoiceForBooking_(row) {
   return found;
 }
 
-/** When a booking is cancelled, its unpaid invoices are voided. Invoices that already have payments are left alone (returned as `kept`). */
+/** When a booking is cancelled, its invoices are voided and then deleted, and its estimates are deleted.
+ *  Invoices that already have payments are left alone (returned as `kept`). */
 function voidInvoicesForBooking_(row) {
-  var res = { voided: 0, kept: 0 };
+  var res = { voided: 0, kept: 0, estimates: 0 };
+  var todo = [];
   readInv_().forEach(function (i) {
-    if (i.type !== "Invoice" || i.bookingRow !== row || i.status === "Void") return;
-    var paid = 0; (i.payments || []).forEach(function (p) { paid += +p.amount || 0; });
-    if (paid > 0.004) { res.kept++; return; }
-    i.status = "Void"; writeInv_(i); res.voided++;
+    if (i.bookingRow !== row) return;
+    if (i.type === "Invoice") {
+      var paid = 0; (i.payments || []).forEach(function (p) { paid += +p.amount || 0; });
+      if (paid > 0.004) { res.kept++; return; }
+      if (i.status !== "Void") { i.status = "Void"; writeInv_(i); }
+      res.voided++;
+    } else res.estimates++;
+    todo.push(i.row);
   });
+  todo.sort(function (a, b) { return b - a; }).forEach(function (r) { invSheet_().deleteRow(r); });
   return res;
 }
 

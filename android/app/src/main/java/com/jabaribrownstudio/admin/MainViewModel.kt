@@ -219,8 +219,8 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
             if (r != null) {
                 message = if (r.ok) {
                     if (status == "Cancelled") {
-                        val v = r.json.optInt("voided"); val k = r.json.optInt("kept")
-                        "Booking cancelled" + (if (v > 0) " and its invoice was voided" else "") + (if (k > 0) ". Its invoice has payments, so it was left as is." else "")
+                        val v = r.json.optInt("voided") + r.json.optInt("estimates"); val k = r.json.optInt("kept")
+                        "Booking cancelled" + (if (v > 0) " and its invoice or estimate was voided and deleted" else "") + (if (k > 0) ". Its invoice has payments, so it was left as is." else "")
                     } else "Marked " + status.lowercase()
                 } else "Couldn't update that booking."
                 openRow = -1
