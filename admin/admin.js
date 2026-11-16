@@ -513,8 +513,9 @@
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("sheet").hidden) closeSheet(); });
   $("add-form").addEventListener("submit", async (e) => {
     e.preventDefault(); const err = $("add-err"); err.textContent = "";
-    const name = $("a-name").value.trim(), date = $("a-date").value, time = $("a-time").value, dur = parseInt($("a-dur").value, 10);
-    if (!name) { err.textContent = "Enter the client's name."; $("a-name").focus(); return; }
+    const first = $("a-name").value.trim(), last = $("a-last").value.trim(), name = (first + " " + last).trim(), date = $("a-date").value, time = $("a-time").value, dur = parseInt($("a-dur").value, 10);
+    if (!first) { err.textContent = "Enter the client's first name."; $("a-name").focus(); return; }
+    if (!last) { err.textContent = "Enter the client's last name."; $("a-last").focus(); return; }
     if (!date || !time) { err.textContent = "Choose a date and start time."; return; }
     if (!(dur >= 5)) { err.textContent = "Enter the session length in minutes."; return; }
     const p = pkgs.find((x) => x.id === $("a-pkg").value);
