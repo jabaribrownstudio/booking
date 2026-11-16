@@ -45,7 +45,9 @@ import java.time.LocalTime
 @Composable
 fun AddBookingSheet(vm: MainViewModel, onClose: () -> Unit) {
     val ctx = LocalContext.current
-    var name by remember { mutableStateOf("") }
+    var first by remember { mutableStateOf("") }
+    var last by remember { mutableStateOf("") }
+    val name = (first.trim() + " " + last.trim()).trim()
     var phone by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
     var location by remember { mutableStateOf("") }
@@ -67,7 +69,10 @@ fun AddBookingSheet(vm: MainViewModel, onClose: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Text("New booking", style = MaterialTheme.typography.titleLarge)
-            OutlinedTextField(name, { name = it }, label = { Text("Client name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(first, { first = it }, label = { Text("First name") }, singleLine = true, modifier = Modifier.weight(1f))
+                OutlinedTextField(last, { last = it }, label = { Text("Last name") }, singleLine = true, modifier = Modifier.weight(1f))
+            }
             OutlinedTextField(phone, { phone = it }, label = { Text("Phone (optional)") }, singleLine = true, modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone))
             OutlinedTextField(email, { email = it }, label = { Text("Email (optional)") }, singleLine = true, modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email))
             Text("Package", style = MaterialTheme.typography.labelLarge)
@@ -117,7 +122,8 @@ fun AddBookingSheet(vm: MainViewModel, onClose: () -> Unit) {
                 onClick = {
                     val d = date; val t = time; val mins = duration.toIntOrNull() ?: 0
                     err = when {
-                        name.isBlank() -> "Enter the client's name."
+                        first.isBlank() -> "Enter the client's first name."
+                        last.isBlank() -> "Enter the client's last name."
                         d == null || t == null -> "Choose a date and start time."
                         mins < 5 -> "Enter the session length in minutes."
                         else -> ""
