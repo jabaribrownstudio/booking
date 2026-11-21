@@ -252,6 +252,7 @@
     if (!isInv && i.status !== "Declined" && !made) h += '<button type="button" class="btn primary" id="d-convert">Convert to invoice</button>';
     if (made) h += '<button type="button" class="btn" id="d-viewmade">View invoice #' + made.number + "</button>";
     h += '<button type="button" class="btn" id="d-send"' + (i.status === "Void" ? " disabled" : "") + ">" + (i.sent ? "Email again" : "Email it") + '</button><button type="button" class="btn" id="d-pdf">Download PDF</button>';
+    if (i.sent || i.status === "Sent") h += '<button type="button" class="btn" id="d-unsent">Mark as Unsent</button>';
     if (canEdit) h += '<button type="button" class="btn" id="d-edit">Edit</button>';
     if (isInv && i.status !== "Void" && i.status !== "Paid") h += '<button type="button" class="btn bad" id="d-void">Void</button>';
     if (!isInv && i.status !== "Declined" && !made) h += '<button type="button" class="btn" id="d-decline">Mark declined</button>';
@@ -266,6 +267,7 @@
     on("#d-send", async () => { const j = await A.api("admin_inv_send", { row: i.row }); A.toast(j.ok ? "Emailed to the client" : j.error === "no_email" ? "Add the client's email address first." : "Couldn't send it.", !j.ok); if (j.ok) load(true); });
     on("#d-pdf", async () => { const j = await A.api("admin_inv_pdf", { row: i.row }); if (j.ok) download(j); else A.toast("Couldn't make the PDF.", true); });
     on("#d-edit", () => { m.close(); editor(i); });
+    on("#d-unsent", async () => { const j = await A.api("admin_inv_status", { row: i.row, status: "Unsent" }); if (j.ok) { m.close(); done("Marked unsent"); } else A.toast("Couldn't update it.", true); });
     on("#d-void", async () => { if (!confirm("Void invoice #" + i.number + "? It stops counting as money owed.")) return; const j = await A.api("admin_inv_status", { row: i.row, status: "Void" }); if (j.ok) { m.close(); done("Marked void"); } else A.toast("Couldn't update it.", true); });
     on("#d-decline", async () => { const j = await A.api("admin_inv_status", { row: i.row, status: "Declined" }); if (j.ok) { m.close(); done("Marked declined"); } else A.toast("Couldn't update it.", true); });
     on("#d-del", async () => { if (!confirm("Delete #" + i.number + " for good?")) return; const j = await A.api("admin_inv_delete", { row: i.row }); if (j.ok) { m.close(); done("Deleted"); } else A.toast("Only drafts and voided invoices can be deleted.", true); });

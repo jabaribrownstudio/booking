@@ -1429,9 +1429,10 @@ function moneyApi_(d, me) {
 
     case "admin_inv_status": {
       var t = getInv_(d.row);
-      var allowed = t && (t.type === "Invoice" ? ["Draft", "Sent", "Void"] : ["Draft", "Sent", "Accepted", "Declined"]);
+      var allowed = t && (t.type === "Invoice" ? ["Draft", "Sent", "Void", "Unsent"] : ["Draft", "Sent", "Accepted", "Declined", "Unsent"]);
       if (!t || allowed.indexOf(d.status) < 0) return { ok: false, error: "invalid_input" };
-      t.status = d.status;
+      if (d.status === "Unsent") { t.sent = ""; if (t.status === "Sent") t.status = "Draft"; }
+      else t.status = d.status;
       if (t.type === "Invoice" && d.status !== "Void") setPaidStatus_(t);
       writeInv_(t);
       return { ok: true };

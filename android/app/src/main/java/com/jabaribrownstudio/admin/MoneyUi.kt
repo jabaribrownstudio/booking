@@ -340,6 +340,7 @@ private fun InvoiceDetail(vm: MainViewModel, inv: Invoice, onClose: () -> Unit, 
                 OutlinedButton(onClick = { vm.fetchPdf(inv.row) { f -> openFile(ctx, f) } }, enabled = !vm.busy, modifier = Modifier.weight(1f)) { Text("View PDF") }
                 OutlinedButton(onClick = { vm.fetchPdf(inv.row) { f -> shareFile(ctx, f) } }, enabled = !vm.busy, modifier = Modifier.weight(1f)) { Text("Share") }
             }
+            if (inv.sent.isNotBlank() || inv.status == "Sent") OutlinedButton(onClick = { vm.invoiceStatus(inv.row, "Unsent") }, enabled = !vm.busy, modifier = Modifier.fillMaxWidth()) { Text("Mark as Unsent") }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (!(inv.isInvoice && (inv.status == "Paid" || inv.status == "Void"))) OutlinedButton(onClick = onEdit, modifier = Modifier.weight(1f)) { Text("Edit") }
                 if (!inv.isInvoice) {
