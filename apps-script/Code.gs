@@ -433,6 +433,7 @@ function createBooking_(d, admin, by) {
           (admin && status === "Confirmed" ? "Your session is booked:" : "Thanks for booking! Here's what we received:") + "\n\n" +
           row[6] + "\n" + when + "\n\n" +
           (admin && status === "Confirmed" ? "" : "We'll confirm your session shortly. ") +
+          "Please note: A 50% deposit is required to secure and confirm your photoshoot date. The remaining balance will be due on the day of the photoshoot.\n\n" +
           "Reply to this email if anything needs to change.\n\n– " + CONFIG.BUSINESS_NAME
       });
     }
@@ -995,17 +996,17 @@ function invoiceHtml_(inv) {
 
   h += '<table width="100%" cellpadding="0" cellspacing="0" style="margin-top:18px;border-collapse:collapse;">' +
     '<tr>' +
-    '<td bgcolor="' + C + '" style="background-color:' + C + ';padding:9px 10px;color:#ffffff;font-weight:bold;">Items</td>' +
-    '<td bgcolor="' + C + '" align="center" style="background-color:' + C + ';padding:9px 10px;color:#ffffff;font-weight:bold;">Quantity</td>' +
-    '<td bgcolor="' + C + '" align="right" style="background-color:' + C + ';padding:9px 10px;color:#ffffff;font-weight:bold;">Price</td>' +
-    '<td bgcolor="' + C + '" align="right" style="background-color:' + C + ';padding:9px 10px;color:#ffffff;font-weight:bold;">Amount</td></tr>';
+    '<td bgcolor="#000000" style="background-color:#000000;padding:9px 10px;color:#ffffff;font-weight:bold;">Items</td>' +
+    '<td bgcolor="#000000" align="center" style="background-color:#000000;padding:9px 10px;color:#ffffff;font-weight:bold;">Quantity</td>' +
+    '<td bgcolor="#000000" align="right" style="background-color:#000000;padding:9px 10px;color:#ffffff;font-weight:bold;">Price</td>' +
+    '<td bgcolor="#000000" align="right" style="background-color:#000000;padding:9px 10px;color:#ffffff;font-weight:bold;">Amount</td></tr>';
   inv.items.forEach(function (it) {
     var lines = String(it.desc || "").split("\n").filter(function (l) { return l.trim(); })
       .map(function (l) { return "<br>- " + esc_(l.replace(/^-\s*/, "")); }).join("");
-    h += '<tr><td valign="top" style="padding:10px;border-bottom:2px solid #e4e4e4;"><b>' + esc_(it.name) + '</b>' + lines + '</td>' +
-      '<td valign="top" align="center" style="padding:10px;border-bottom:2px solid #e4e4e4;">' + (+it.qty) + '</td>' +
-      '<td valign="top" align="right" style="padding:10px;border-bottom:2px solid #e4e4e4;">' + money_(it.price) + '</td>' +
-      '<td valign="top" align="right" style="padding:10px;border-bottom:2px solid #e4e4e4;">' + money_(Math.round(it.qty * it.price * 100) / 100) + '</td></tr>';
+    h += '<tr><td valign="top" style="padding:10px;border-bottom:2px solid #9a9a9a;"><b>' + esc_(it.name) + '</b>' + lines + '</td>' +
+      '<td valign="top" align="center" style="padding:10px;border-bottom:2px solid #9a9a9a;">' + (+it.qty) + '</td>' +
+      '<td valign="top" align="right" style="padding:10px;border-bottom:2px solid #9a9a9a;">' + money_(it.price) + '</td>' +
+      '<td valign="top" align="right" style="padding:10px;border-bottom:2px solid #9a9a9a;">' + money_(Math.round(it.qty * it.price * 100) / 100) + '</td></tr>';
   });
   h += '</table>';
 
@@ -1025,7 +1026,7 @@ function invoiceHtml_(inv) {
     inv.payments.forEach(function (p) {
       h += tr("Payment on " + fmtDate_(p.date) + (p.method ? " using a " + esc_(p.method) : "") + ":", money_(p.amount));
     });
-    h += '<tr><td colspan="2" style="border-top:2px solid #e4e4e4;font-size:2px;">&nbsp;</td></tr>' + tr("Amount Due (" + CONFIG.CURRENCY_CODE + "):", money_(due), true);
+    h += '<tr><td colspan="2" style="border-top:2px solid #9a9a9a;font-size:2px;">&nbsp;</td></tr>' + tr("Amount Due (" + CONFIG.CURRENCY_CODE + "):", money_(due), true);
   }
   h += '</table><div style="clear:both;"></div>';
 
