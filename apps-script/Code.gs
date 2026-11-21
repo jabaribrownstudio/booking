@@ -996,10 +996,10 @@ function invoiceHtml_(inv) {
 
   h += '<table width="100%" cellpadding="0" cellspacing="0" style="margin-top:18px;border-collapse:collapse;">' +
     '<tr>' +
-    '<td bgcolor="#000000" style="background-color:#000000;padding:9px 10px;color:#ffffff;font-weight:bold;">Items</td>' +
-    '<td bgcolor="#000000" align="center" style="background-color:#000000;padding:9px 10px;color:#ffffff;font-weight:bold;">Quantity</td>' +
-    '<td bgcolor="#000000" align="right" style="background-color:#000000;padding:9px 10px;color:#ffffff;font-weight:bold;">Price</td>' +
-    '<td bgcolor="#000000" align="right" style="background-color:#000000;padding:9px 10px;color:#ffffff;font-weight:bold;">Amount</td></tr>';
+    '<td bgcolor="#000000" style="background-color:#000000;border:9px solid #000000;padding:0;color:#ffffff;font-weight:bold;">Items</td>' +
+    '<td bgcolor="#000000" align="center" style="background-color:#000000;border:9px solid #000000;padding:0;color:#ffffff;font-weight:bold;">Quantity</td>' +
+    '<td bgcolor="#000000" align="right" style="background-color:#000000;border:9px solid #000000;padding:0;color:#ffffff;font-weight:bold;">Price</td>' +
+    '<td bgcolor="#000000" align="right" style="background-color:#000000;border:9px solid #000000;padding:0;color:#ffffff;font-weight:bold;">Amount</td></tr>';
   inv.items.forEach(function (it) {
     var lines = String(it.desc || "").split("\n").filter(function (l) { return l.trim(); })
       .map(function (l) { return "<br>- " + esc_(l.replace(/^-\s*/, "")); }).join("");
