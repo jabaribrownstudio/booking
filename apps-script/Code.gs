@@ -1076,8 +1076,8 @@ function invoiceDocPdf_(inv) {
     var noBorder = function (t) { t.setBorderWidth(0); return t; };
     var put = function (cell, text, o) {
       o = o || {};
-      var par = cell.getNumChildren() === 1 && cell.getChild(0).asParagraph().getText() === "" && !o.append ? cell.getChild(0).asParagraph() : cell.appendParagraph("");
-      par.setText(text);
+      var par = cell.getNumChildren() === 1 && /^[\u00a0]?$/.test(cell.getChild(0).asParagraph().getText()) && !o.append ? cell.getChild(0).asParagraph() : cell.appendParagraph("\u00a0");
+      par.setText(text === "" ? "\u00a0" : text);
       par.setAlignment(o.align || DocumentApp.HorizontalAlignment.LEFT).setSpacingBefore(0).setSpacingAfter(o.after || 0).setLineSpacing(1.15);
       par.editAsText().setBold(!!o.bold).setFontSize(o.size || 10).setForegroundColor(o.color || "#222222").setFontFamily("Arial");
       return par;
@@ -1099,7 +1099,7 @@ function invoiceDocPdf_(inv) {
     put(rc, String(CONFIG.BUSINESS_PHONE), { align: R, append: true });
     put(rc, String(CONFIG.BUSINESS_EMAIL), { align: R, append: true });
 
-    var rule = body.appendParagraph(""); rule.setSpacingBefore(6).setSpacingAfter(0); rule.editAsText().setFontSize(2);
+    var rule = body.appendParagraph("\u00a0"); rule.setSpacingBefore(6).setSpacingAfter(0); rule.editAsText().setFontSize(2);
     body.appendHorizontalRule();
 
     // bill to + meta
@@ -1120,7 +1120,7 @@ function invoiceDocPdf_(inv) {
       if (i === 3) t.setBold(true);
     });
 
-    var sp = body.appendParagraph(""); sp.setSpacingAfter(0).editAsText().setFontSize(6);
+    var sp = body.appendParagraph("\u00a0"); sp.setSpacingAfter(0).editAsText().setFontSize(6);
 
     // items
     var items = noBorder(body.appendTable([["Items", "Quantity", "Price", "Amount"]]));
@@ -1134,7 +1134,7 @@ function invoiceDocPdf_(inv) {
     var sepRow = function (tbl, from) {
       var row = tbl.appendTableRow();
       for (var k = 0; k < (tbl.getRow(0).getNumCells()); k++) {
-        var cell = row.appendTableCell(""); pad(cell, 0, 0, 0, 0);
+        var cell = row.appendTableCell("\u00a0"); pad(cell, 0, 0, 0, 0);
         if (k >= from) cell.setBackgroundColor(LINE);
         cell.getChild(0).asParagraph().setSpacingBefore(0).setSpacingAfter(0).setLineSpacing(0.1).editAsText().setFontSize(1);
       }
@@ -1163,13 +1163,13 @@ function invoiceDocPdf_(inv) {
     }
     rows.push(["Total:", money_(inv.total), true]);
     if (isInv) inv.payments.forEach(function (p) { rows.push(["Payment on " + fmtDate_(p.date) + (p.method ? " using a " + p.method : "") + ":", money_(p.amount)]); });
-    var gap = body.appendParagraph(""); gap.setSpacingAfter(0).editAsText().setFontSize(6);
+    var gap = body.appendParagraph("\u00a0"); gap.setSpacingAfter(0).editAsText().setFontSize(6);
     var tot = noBorder(body.appendTable([["", "", ""]]));
     tot.setColumnWidth(0, 160).setColumnWidth(1, 250).setColumnWidth(2, 90);
     var firstTot = true;
     var totRow = function () {
       if (firstTot) { firstTot = false; var r0 = tot.getRow(0); return [r0, r0.getCell(0), r0.getCell(1), r0.getCell(2)]; }
-      var rr = tot.appendTableRow(); return [rr, rr.appendTableCell(""), rr.appendTableCell(""), rr.appendTableCell("")];
+      var rr = tot.appendTableRow(); return [rr, rr.appendTableCell("\u00a0"), rr.appendTableCell("\u00a0"), rr.appendTableCell("\u00a0")];
     };
     rows.forEach(function (r) {
       var tr = totRow(), a = tr[1], b = tr[2], c3 = tr[3];
@@ -1191,19 +1191,19 @@ function invoiceDocPdf_(inv) {
     if (CONFIG.INVOICE_TERMS) terms.push(CONFIG.INVOICE_TERMS);
     if (!isInv && CONFIG.ESTIMATE_NOTE) terms.push(CONFIG.ESTIMATE_NOTE);
     if (terms.length) {
-      var g2 = body.appendParagraph(""); g2.setSpacingAfter(0).editAsText().setFontSize(18);
+      var g2 = body.appendParagraph("\u00a0"); g2.setSpacingAfter(0).editAsText().setFontSize(18);
       var th = body.appendParagraph("All payments should be made to:"); th.setSpacingBefore(0).setSpacingAfter(2).editAsText().setBold(true).setFontSize(9).setForegroundColor("#555555");
       terms.forEach(function (t, i) {
         String(t).split("\n").forEach(function (ln) { var pp = body.appendParagraph(ln); pp.setSpacingBefore(0).setSpacingAfter(0).setLineSpacing(1.3).editAsText().setBold(false).setFontSize(9).setForegroundColor(GREY); });
-        if (i < terms.length - 1) body.appendParagraph("").editAsText().setFontSize(6);
+        if (i < terms.length - 1) body.appendParagraph("\u00a0").editAsText().setFontSize(6);
       });
     }
-    var g3 = body.appendParagraph(""); g3.editAsText().setFontSize(24);
+    var g3 = body.appendParagraph("\u00a0"); g3.editAsText().setFontSize(24);
     var ft = body.appendParagraph(String(CONFIG.INVOICE_FOOTER)); ft.setAlignment(C).editAsText().setFontSize(9).setForegroundColor("#888888");
 
     // drop the empty paragraph the doc starts with
     var first = body.getChild(0);
-    if (first.getType() === DocumentApp.ElementType.PARAGRAPH && first.asParagraph().getText() === "" && body.getNumChildren() > 1) body.removeChild(first);
+    if (first.getType() === DocumentApp.ElementType.PARAGRAPH && /^[\u00a0]?$/.test(first.asParagraph().getText()) && body.getNumChildren() > 1) body.removeChild(first);
 
     doc.saveAndClose();
     return DriveApp.getFileById(id).getAs("application/pdf");
