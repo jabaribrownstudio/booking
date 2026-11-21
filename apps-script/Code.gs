@@ -1040,7 +1040,176 @@ function invoiceHtml_(inv) {
 
 function invoicePdf_(inv) {
   var label = (inv.type === "Invoice" ? "Invoice " : "Estimate ") + inv.number + " - " + inv.client.replace(/[^\w .-]/g, "");
+  try { return invoiceDocPdf_(inv).setName(label + ".pdf"); }
+  catch (e) { console.error("doc pdf failed, using html: " + e); }
   return Utilities.newBlob(invoiceHtml_(inv), "text/html", label + ".html").getAs("application/pdf").setName(label + ".pdf");
+}
+
+function logoBlob_() {
+  var b64 = LOGO_B64;
+  if (!b64) {
+    try {
+      var cache = CacheService.getScriptCache(); b64 = cache.get("logo64");
+      if (!b64) {
+        var r = UrlFetchApp.fetch(CONFIG.LOGO_URL, { muteHttpExceptions: true });
+        if (r.getResponseCode() !== 200) return null;
+        b64 = Utilities.base64Encode(r.getContent());
+        if (b64.length < 90000) cache.put("logo64", b64, 21600);
+      }
+    } catch (e) { return null; }
+  }
+  return Utilities.newBlob(Utilities.base64Decode(b64), "image/png", "logo.png");
+}
+
+/** Builds the invoice as a Google Doc (real, selectable text and a solid black header row), exports it as a PDF, then trashes the doc. */
+function invoiceDocPdf_(inv) {
+  var isInv = inv.type === "Invoice";
+  var due = Math.max(0, Math.round((inv.total - inv.paid) * 100) / 100);
+  var doc = DocumentApp.create("tmp-" + (isInv ? "invoice" : "estimate") + "-" + inv.number);
+  var id = doc.getId();
+  try {
+    var body = doc.getBody();
+    body.setMarginTop(40).setMarginBottom(40).setMarginLeft(48).setMarginRight(48);
+    body.setAttributes({ "FONT_FAMILY": "Arial", "FONT_SIZE": 10, "FOREGROUND_COLOR": "#222222" });
+    var GREY = "#666666", BLACK = "#000000", LINE = "#9a9a9a";
+    var pad = function (cell, t, r, b, l) { cell.setPaddingTop(t).setPaddingRight(r).setPaddingBottom(b).setPaddingLeft(l); };
+    var noBorder = function (t) { t.setBorderWidth(0); return t; };
+    var put = function (cell, text, o) {
+      o = o || {};
+      var par = cell.getNumChildren() === 1 && cell.getChild(0).asParagraph().getText() === "" && !o.append ? cell.getChild(0).asParagraph() : cell.appendParagraph("");
+      par.setText(text);
+      par.setAlignment(o.align || DocumentApp.HorizontalAlignment.LEFT).setSpacingBefore(0).setSpacingAfter(o.after || 0).setLineSpacing(1.15);
+      par.editAsText().setBold(!!o.bold).setFontSize(o.size || 10).setForegroundColor(o.color || "#222222").setFontFamily("Arial");
+      return par;
+    };
+    var L = DocumentApp.HorizontalAlignment.LEFT, R = DocumentApp.HorizontalAlignment.RIGHT, C = DocumentApp.HorizontalAlignment.CENTER;
+
+    // top: logo (left), title + business details (right)
+    var top = noBorder(body.appendTable([["", ""]]));
+    top.setColumnWidth(0, 250).setColumnWidth(1, 250);
+    var lc = top.getCell(0, 0), rc = top.getCell(0, 1);
+    pad(lc, 0, 0, 0, 0); pad(rc, 0, 0, 0, 0);
+    var lg = logoBlob_();
+    if (lg) { var img = lc.getChild(0).asParagraph().appendInlineImage(lg); var h0 = 64; img.setWidth(Math.round(h0 * 466 / 230)).setHeight(h0); }
+    else put(lc, CONFIG.BUSINESS_NAME, { bold: true, size: 16 });
+    put(rc, isInv ? "INVOICE" : "ESTIMATE", { align: R, size: 26, after: 8 });
+    put(rc, CONFIG.BUSINESS_NAME, { align: R, bold: true, append: true });
+    CONFIG.BUSINESS_LINES.forEach(function (ln) { put(rc, String(ln), { align: R, append: true }); });
+    put(rc, "", { append: true });
+    put(rc, String(CONFIG.BUSINESS_PHONE), { align: R, append: true });
+    put(rc, String(CONFIG.BUSINESS_EMAIL), { align: R, append: true });
+
+    var rule = body.appendParagraph(""); rule.setSpacingBefore(6).setSpacingAfter(0); rule.editAsText().setFontSize(2);
+    body.appendHorizontalRule();
+
+    // bill to + meta
+    var mid = noBorder(body.appendTable([["", ""]]));
+    mid.setColumnWidth(0, 250).setColumnWidth(1, 250);
+    var bl = mid.getCell(0, 0), mr = mid.getCell(0, 1);
+    pad(bl, 6, 0, 0, 0); pad(mr, 6, 0, 0, 0);
+    put(bl, "BILL TO", { color: "#888888" });
+    put(bl, inv.client, { bold: true, append: true });
+    if (inv.email) put(bl, inv.email, { color: "#555555", append: true });
+    var metas = [[(isInv ? "Invoice" : "Estimate") + " Number:", String(inv.number)],
+      [(isInv ? "Invoice" : "Estimate") + " Date:", fmtDate_(inv.date)],
+      [isInv ? "Payment Due:" : "Valid Until:", fmtDate_(inv.due)],
+      [(isInv ? "Amount Due" : "Total") + " (" + CONFIG.CURRENCY_CODE + "):", money_(isInv ? due : inv.total)]];
+    metas.forEach(function (m, i) {
+      var par = put(mr, m[0] + "  " + m[1], { align: R, append: i > 0 });
+      var t = par.editAsText(); t.setBold(0, m[0].length - 1, true);
+      if (i === 3) t.setBold(true);
+    });
+
+    var sp = body.appendParagraph(""); sp.setSpacingAfter(0).editAsText().setFontSize(6);
+
+    // items
+    var items = noBorder(body.appendTable([["Items", "Quantity", "Price", "Amount"]]));
+    var W = [250, 80, 85, 85];
+    W.forEach(function (w, i) { items.setColumnWidth(i, w); });
+    var hr = items.getRow(0);
+    for (var c = 0; c < 4; c++) {
+      var hc = hr.getCell(c); hc.setBackgroundColor(BLACK); pad(hc, 7, 8, 7, 8);
+      put(hc, ["Items", "Quantity", "Price", "Amount"][c], { bold: true, color: "#ffffff", align: c === 0 ? L : (c === 1 ? C : R) });
+    }
+    var sepRow = function (tbl, from) {
+      var row = tbl.appendTableRow();
+      for (var k = 0; k < (tbl.getRow(0).getNumCells()); k++) {
+        var cell = row.appendTableCell(""); pad(cell, 0, 0, 0, 0);
+        if (k >= from) cell.setBackgroundColor(LINE);
+        cell.getChild(0).asParagraph().setSpacingBefore(0).setSpacingAfter(0).setLineSpacing(0.1).editAsText().setFontSize(1);
+      }
+      row.setMinimumHeight(1.5);
+    };
+    inv.items.forEach(function (it) {
+      var row = items.appendTableRow();
+      var cs = [row.appendTableCell(""), row.appendTableCell(""), row.appendTableCell(""), row.appendTableCell("")];
+      cs.forEach(function (cc) { pad(cc, 8, 8, 8, 8); });
+      var lines = String(it.desc || "").split("\n").filter(function (l) { return l.trim(); });
+      put(cs[0], it.name, { bold: true });
+      lines.forEach(function (l) { put(cs[0], "- " + l.replace(/^-\s*/, ""), { append: true }); });
+      put(cs[1], String(+it.qty), { align: C });
+      put(cs[2], money_(it.price), { align: R });
+      put(cs[3], money_(Math.round(it.qty * it.price * 100) / 100), { align: R });
+      sepRow(items, 0);
+    });
+
+    // totals
+    var tt = totals_(inv.items, inv.discount, inv.taxes);
+    var rows = [];
+    if (tt.discount > 0 || tt.taxes.length) {
+      rows.push(["Subtotal:", money_(tt.subtotal)]);
+      if (tt.discount > 0) rows.push(["Discount" + (inv.discount && inv.discount.type === "percent" ? " (" + inv.discount.value + "%)" : "") + ":", "-" + money_(tt.discount)]);
+      tt.taxes.forEach(function (t) { rows.push([t.name + " (" + t.rate + "%):", money_(t.amount)]); });
+    }
+    rows.push(["Total:", money_(inv.total), true]);
+    if (isInv) inv.payments.forEach(function (p) { rows.push(["Payment on " + fmtDate_(p.date) + (p.method ? " using a " + p.method : "") + ":", money_(p.amount)]); });
+    var gap = body.appendParagraph(""); gap.setSpacingAfter(0).editAsText().setFontSize(6);
+    var tot = noBorder(body.appendTable([["", "", ""]]));
+    tot.setColumnWidth(0, 160).setColumnWidth(1, 250).setColumnWidth(2, 90);
+    var firstTot = true;
+    var totRow = function () {
+      if (firstTot) { firstTot = false; var r0 = tot.getRow(0); return [r0, r0.getCell(0), r0.getCell(1), r0.getCell(2)]; }
+      var rr = tot.appendTableRow(); return [rr, rr.appendTableCell(""), rr.appendTableCell(""), rr.appendTableCell("")];
+    };
+    rows.forEach(function (r) {
+      var tr = totRow(), a = tr[1], b = tr[2], c3 = tr[3];
+      [a, b, c3].forEach(function (x) { pad(x, 4, 8, 4, 8); });
+      put(b, r[0], { align: R, bold: !!r[2] }); put(c3, r[1], { align: R, bold: !!r[2] });
+    });
+    if (isInv) {
+      var st = totRow(), srow = st[0], z = st[1], y = st[2], x2 = st[3];
+      [z, y, x2].forEach(function (q) { pad(q, 0, 0, 0, 0); q.getChild(0).asParagraph().setSpacingAfter(0).setLineSpacing(0.1).editAsText().setFontSize(1); });
+      y.setBackgroundColor(LINE); x2.setBackgroundColor(LINE); srow.setMinimumHeight(1.5);
+      var dt = totRow(), d1 = dt[1], d2 = dt[2], d3 = dt[3];
+      [d1, d2, d3].forEach(function (q) { pad(q, 5, 8, 4, 8); });
+      put(d2, "Amount Due (" + CONFIG.CURRENCY_CODE + "):", { align: R, bold: true }); put(d3, money_(due), { align: R, bold: true });
+    }
+
+    // terms + footer
+    var terms = [];
+    if (inv.notes) terms.push(inv.notes);
+    if (CONFIG.INVOICE_TERMS) terms.push(CONFIG.INVOICE_TERMS);
+    if (!isInv && CONFIG.ESTIMATE_NOTE) terms.push(CONFIG.ESTIMATE_NOTE);
+    if (terms.length) {
+      var g2 = body.appendParagraph(""); g2.setSpacingAfter(0).editAsText().setFontSize(18);
+      var th = body.appendParagraph("All payments should be made to:"); th.setSpacingBefore(0).setSpacingAfter(2).editAsText().setBold(true).setFontSize(9).setForegroundColor("#555555");
+      terms.forEach(function (t, i) {
+        String(t).split("\n").forEach(function (ln) { var pp = body.appendParagraph(ln); pp.setSpacingBefore(0).setSpacingAfter(0).setLineSpacing(1.3).editAsText().setBold(false).setFontSize(9).setForegroundColor(GREY); });
+        if (i < terms.length - 1) body.appendParagraph("").editAsText().setFontSize(6);
+      });
+    }
+    var g3 = body.appendParagraph(""); g3.editAsText().setFontSize(24);
+    var ft = body.appendParagraph(String(CONFIG.INVOICE_FOOTER)); ft.setAlignment(C).editAsText().setFontSize(9).setForegroundColor("#888888");
+
+    // drop the empty paragraph the doc starts with
+    var first = body.getChild(0);
+    if (first.getType() === DocumentApp.ElementType.PARAGRAPH && first.asParagraph().getText() === "" && body.getNumChildren() > 1) body.removeChild(first);
+
+    doc.saveAndClose();
+    return DriveApp.getFileById(id).getAs("application/pdf");
+  } finally {
+    try { DriveApp.getFileById(id).setTrashed(true); } catch (e2) { /* ignore */ }
+  }
 }
 
 /** Emails the document to the client as a PDF. Returns true if it was sent. */
