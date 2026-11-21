@@ -995,11 +995,11 @@ function invoiceHtml_(inv) {
     '</table></td></tr></table>';
 
   h += '<table width="100%" cellpadding="0" cellspacing="0" style="margin-top:18px;border-collapse:collapse;">' +
-    '<tr>' +
-    '<td bgcolor="#000000" style="background-color:#000000;border:9px solid #000000;padding:0;color:#ffffff;font-weight:bold;">Items</td>' +
-    '<td bgcolor="#000000" align="center" style="background-color:#000000;border:9px solid #000000;padding:0;color:#ffffff;font-weight:bold;">Quantity</td>' +
-    '<td bgcolor="#000000" align="right" style="background-color:#000000;border:9px solid #000000;padding:0;color:#ffffff;font-weight:bold;">Price</td>' +
-    '<td bgcolor="#000000" align="right" style="background-color:#000000;border:9px solid #000000;padding:0;color:#ffffff;font-weight:bold;">Amount</td></tr>';
+    '<tr bgcolor="#000000" style="background-color:#000000;">' +
+    '<td bgcolor="#000000" background="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNgYGAAAAAEAAH2FzhVAAAAAElFTkSuQmCC" style="background:#000000 url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNgYGAAAAAEAAH2FzhVAAAAAElFTkSuQmCC);background-color:#000000;padding:9px 10px;color:#ffffff;font-weight:bold;">Items</td>' +
+    '<td bgcolor="#000000" background="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNgYGAAAAAEAAH2FzhVAAAAAElFTkSuQmCC" align="center" style="background:#000000 url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNgYGAAAAAEAAH2FzhVAAAAAElFTkSuQmCC);background-color:#000000;padding:9px 10px;color:#ffffff;font-weight:bold;">Quantity</td>' +
+    '<td bgcolor="#000000" background="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNgYGAAAAAEAAH2FzhVAAAAAElFTkSuQmCC" align="right" style="background:#000000 url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNgYGAAAAAEAAH2FzhVAAAAAElFTkSuQmCC);background-color:#000000;padding:9px 10px;color:#ffffff;font-weight:bold;">Price</td>' +
+    '<td bgcolor="#000000" background="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNgYGAAAAAEAAH2FzhVAAAAAElFTkSuQmCC" align="right" style="background:#000000 url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNgYGAAAAAEAAH2FzhVAAAAAElFTkSuQmCC);background-color:#000000;padding:9px 10px;color:#ffffff;font-weight:bold;">Amount</td></tr>';
   inv.items.forEach(function (it) {
     var lines = String(it.desc || "").split("\n").filter(function (l) { return l.trim(); })
       .map(function (l) { return "<br>- " + esc_(l.replace(/^-\s*/, "")); }).join("");
