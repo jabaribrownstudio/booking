@@ -1076,7 +1076,7 @@ function invoiceDocPdf_(inv) {
     var noBorder = function (t) { t.setBorderWidth(0); return t; };
     var put = function (cell, text, o) {
       o = o || {};
-      var par = cell.getNumChildren() === 1 && /^[\u00a0]?$/.test(cell.getChild(0).asParagraph().getText()) && !o.append ? cell.getChild(0).asParagraph() : cell.appendParagraph("\u00a0");
+      var par = cell.getNumChildren() === 1 && !o.append ? cell.getChild(0).asParagraph() : cell.appendParagraph("\u00a0");
       par.setText(text === "" ? "\u00a0" : text);
       par.setAlignment(o.align || DocumentApp.HorizontalAlignment.LEFT).setSpacingBefore(0).setSpacingAfter(o.after || 0).setLineSpacing(1.15);
       par.editAsText().setBold(!!o.bold).setFontSize(o.size || 10).setForegroundColor(o.color || "#222222").setFontFamily("Arial");
@@ -1128,7 +1128,7 @@ function invoiceDocPdf_(inv) {
     W.forEach(function (w, i) { items.setColumnWidth(i, w); });
     var hr = items.getRow(0);
     for (var c = 0; c < 4; c++) {
-      var hc = hr.getCell(c); hc.setBackgroundColor(BLACK); pad(hc, 7, 8, 7, 8);
+      var hc = hr.getCell(c); hc.setBackgroundColor(BLACK); pad(hc, 5, 8, 5, 8);
       put(hc, ["Items", "Quantity", "Price", "Amount"][c], { bold: true, color: "#ffffff", align: c === 0 ? L : (c === 1 ? C : R) });
     }
     var sepRow = function (tbl, from) {
