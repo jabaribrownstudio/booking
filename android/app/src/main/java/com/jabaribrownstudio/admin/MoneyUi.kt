@@ -356,7 +356,6 @@ private fun InvoiceDetail(vm: MainViewModel, inv: Invoice, onClose: () -> Unit, 
                 ) { Text("Delete", maxLines = 1, softWrap = false) }
             }
         }
-        }
     }
     if (paying) PaymentDialog(inv, onDismiss = { paying = false }) { amt, date, method, receipt -> paying = false; vm.payInvoice(inv.row, amt, date, method, receipt) }
     if (confirmDelete) AlertDialog(
