@@ -336,24 +336,26 @@ private fun InvoiceDetail(vm: MainViewModel, inv: Invoice, onClose: () -> Unit, 
             if (inv.isInvoice && inv.status != "Void" && inv.status != "Paid") Button(onClick = { paying = true }, modifier = Modifier.fillMaxWidth().height(48.dp)) { Text("Record payment") }
             if (!inv.isInvoice && inv.status != "Declined" && m0(vm, inv) == null) Button(onClick = { converting = inv }, modifier = Modifier.fillMaxWidth().height(48.dp)) { Text("Convert to invoice") }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = { vm.sendInvoice(inv.row) }, enabled = !vm.busy && inv.status != "Void", modifier = Modifier.weight(1f)) { Text(if (inv.sent.isBlank()) "Email it" else "Email again") }
+                OutlinedButton(onClick = { vm.sendInvoice(inv.row) }, enabled = !vm.busy && inv.status != "Void", modifier = Modifier.weight(1f)) { Text(if (inv.sent.isBlank()) "Email it" else "Email again", maxLines = 1, softWrap = false) }
                 OutlinedButton(onClick = { vm.fetchPdf(inv.row) { f -> openFile(ctx, f) } }, enabled = !vm.busy, modifier = Modifier.weight(1f)) { Text("View PDF") }
                 OutlinedButton(onClick = { vm.fetchPdf(inv.row) { f -> shareFile(ctx, f) } }, enabled = !vm.busy, modifier = Modifier.weight(1f)) { Text("Share") }
             }
             if (inv.sent.isNotBlank() || inv.status == "Sent") OutlinedButton(onClick = { vm.invoiceStatus(inv.row, "Unsent") }, enabled = !vm.busy, modifier = Modifier.fillMaxWidth()) { Text("Mark as Unsent") }
+            if (!inv.isInvoice) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (inv.status != "Accepted") OutlinedButton(onClick = { vm.invoiceStatus(inv.row, "Accepted") }, modifier = Modifier.weight(1f)) { Text("Accepted", maxLines = 1, softWrap = false) }
+                if (inv.status != "Declined") OutlinedButton(onClick = { vm.invoiceStatus(inv.row, "Declined") }, modifier = Modifier.weight(1f)) { Text("Declined", maxLines = 1, softWrap = false) }
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (!(inv.isInvoice && (inv.status == "Paid" || inv.status == "Void"))) OutlinedButton(onClick = onEdit, modifier = Modifier.weight(1f)) { Text("Edit") }
-                if (!inv.isInvoice) {
-                    if (inv.status != "Accepted") OutlinedButton(onClick = { vm.invoiceStatus(inv.row, "Accepted") }, modifier = Modifier.weight(1f)) { Text("Accepted") }
-                    if (inv.status != "Declined") OutlinedButton(onClick = { vm.invoiceStatus(inv.row, "Declined") }, modifier = Modifier.weight(1f)) { Text("Declined") }
-                } else if (inv.status != "Void" && inv.status != "Paid") {
-                    OutlinedButton(onClick = { vm.invoiceStatus(inv.row, "Void") }, modifier = Modifier.weight(1f)) { Text("Void") }
+                if (!(inv.isInvoice && (inv.status == "Paid" || inv.status == "Void"))) OutlinedButton(onClick = onEdit, modifier = Modifier.weight(1f)) { Text("Edit", maxLines = 1, softWrap = false) }
+                if (inv.isInvoice && inv.status != "Void" && inv.status != "Paid") {
+                    OutlinedButton(onClick = { vm.invoiceStatus(inv.row, "Void") }, modifier = Modifier.weight(1f)) { Text("Void", maxLines = 1, softWrap = false) }
                 }
                 if (!inv.isInvoice || inv.status == "Draft" || inv.status == "Void") OutlinedButton(
                     onClick = { confirmDelete = true }, modifier = Modifier.weight(1f),
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
-                ) { Text("Delete") }
+                ) { Text("Delete", maxLines = 1, softWrap = false) }
             }
+        }
         }
     }
     if (paying) PaymentDialog(inv, onDismiss = { paying = false }) { amt, date, method, receipt -> paying = false; vm.payInvoice(inv.row, amt, date, method, receipt) }
