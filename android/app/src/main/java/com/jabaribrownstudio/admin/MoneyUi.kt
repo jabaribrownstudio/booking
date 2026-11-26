@@ -336,9 +336,9 @@ private fun InvoiceDetail(vm: MainViewModel, inv: Invoice, onClose: () -> Unit, 
             if (inv.isInvoice && inv.status != "Void" && inv.status != "Paid") Button(onClick = { paying = true }, modifier = Modifier.fillMaxWidth().height(48.dp)) { Text("Record payment") }
             if (!inv.isInvoice && inv.status != "Declined" && m0(vm, inv) == null) Button(onClick = { converting = inv }, modifier = Modifier.fillMaxWidth().height(48.dp)) { Text("Convert to invoice") }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = { vm.sendInvoice(inv.row) }, enabled = !vm.busy && inv.status != "Void", modifier = Modifier.weight(1f)) { Text(if (inv.sent.isBlank()) "Email it" else "Email again", maxLines = 1, softWrap = false) }
-                OutlinedButton(onClick = { vm.fetchPdf(inv.row) { f -> openFile(ctx, f) } }, enabled = !vm.busy, modifier = Modifier.weight(1f)) { Text("View PDF") }
-                OutlinedButton(onClick = { vm.fetchPdf(inv.row) { f -> shareFile(ctx, f) } }, enabled = !vm.busy, modifier = Modifier.weight(1f)) { Text("Share") }
+                OutlinedButton(onClick = { vm.sendInvoice(inv.row) }, enabled = !vm.busy && inv.status != "Void", contentPadding = PaddingValues(horizontal = 4.dp), modifier = Modifier.weight(1f)) { Text(if (inv.sent.isBlank()) "Email it" else "Email again", maxLines = 1, softWrap = false, fontSize = 13.sp) }
+                OutlinedButton(onClick = { vm.fetchPdf(inv.row) { f -> openFile(ctx, f) } }, enabled = !vm.busy, contentPadding = PaddingValues(horizontal = 4.dp), modifier = Modifier.weight(1f)) { Text("View PDF") }
+                OutlinedButton(onClick = { vm.fetchPdf(inv.row) { f -> shareFile(ctx, f) } }, enabled = !vm.busy, contentPadding = PaddingValues(horizontal = 4.dp), modifier = Modifier.weight(1f)) { Text("Share") }
             }
             if (inv.sent.isNotBlank() || inv.status == "Sent") OutlinedButton(onClick = { vm.invoiceStatus(inv.row, "Unsent") }, enabled = !vm.busy, modifier = Modifier.fillMaxWidth()) { Text("Mark as Unsent") }
             if (!inv.isInvoice) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
