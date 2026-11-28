@@ -183,23 +183,39 @@
   /* ---------- invoice / estimate editor ---------- */
   function editor(existing, type, prefill) {
     type = existing ? existing.type : type; const est = type === "Estimate";
-    const inv = existing || prefill || {};
+    const draftOn = !existing && !prefill, dKey = "studio-draft-" + type;
+    let draft = null;
+    if (draftOn) { try { draft = JSON.parse(localStorage.getItem(dKey) || "null"); } catch (e) { draft = null; } }
+    const inv = existing || prefill || draft || {};
     const bookings = A.S.bookings.filter((b) => b.status !== "Cancelled");
     const m = modal(head((existing ? "Edit " : "New ") + (est ? "Estimate" : "Invoice") + (existing ? " #" + existing.number : "")) +
+      (draft ? '<p class="muted">Your unsaved draft was restored.</p>' : "") +
       (M.clients && M.clients.length ? '<label>Saved client <span class="muted">(optional)</span><select id="e-pickclient"><option value="">Choose a saved client…</option>' + M.clients.map((c) => '<option value="' + c.row + '">' + A.esc(c.name + (c.email ? " · " + c.email : "")) + "</option>").join("") + "</select></label>" : "") +
       '<label>Client name<input id="e-client" type="text" maxlength="100"></label><div class="grid2"><label>Email<input id="e-email" type="email" autocapitalize="none"></label><label>Phone<input id="e-phone" type="tel"></label></div>' +
       '<label>Linked booking <span class="muted">(optional)</span><select id="e-book"><option value="0">None</option>' + bookings.map((b) => '<option value="' + b.row + '">' + A.esc(b.name + " · " + b.pkg + " · " + b.date) + "</option>").join("") + "</select></label>" +
       '<div class="grid2"><label>Date<input id="e-date" type="date"></label><label>' + (est ? "Valid until" : "Due") + '<input id="e-due" type="date"></label></div>' +
       '<b class="lbl">Items</b><div id="e-lines" class="lines"></div>' + feePicker() + adjustHtml("e-", inv.discount ? [] : [], inv.taxes || []) +
       '<label>Notes <span class="muted">(optional)</span><textarea id="e-notes" rows="2"></textarea></label><div class="totalbox" id="e-total"></div><p class="err" id="e-err"></p>' +
-      '<div class="acts"><button class="btn primary" id="e-save" type="button">Save</button><button class="btn" id="e-send" type="button">Save and email</button></div>', true);
+      '<div class="acts"><button class="btn primary" id="e-save" type="button">Save</button><button class="btn" id="e-send" type="button">Save and email</button></div>' + (draftOn ? '<div class="acts"><button class="btn" id="e-discard" type="button">Discard draft</button></div>' : ""), true);
     const set = (id, v) => { m.q(id).value = v == null ? "" : v; };
     set("#e-client", inv.client); set("#e-email", inv.email); set("#e-phone", inv.phone); set("#e-book", inv.bookingRow || 0);
     set("#e-date", inv.date || today()); set("#e-due", inv.due || inv.date || today()); set("#e-notes", inv.notes);
     if (inv.discount) { set("#e-dt", inv.discount.type); set("#e-dv", inv.discount.value); }
     const box = m.q("#e-lines");
     (inv.items && inv.items.length ? inv.items : []).forEach((l) => box.insertAdjacentHTML("beforeend", lineRow(l)));
+    let dead = false;
+    const persist = () => {
+      if (!draftOn || dead) return;
+      try {
+        const rows = Array.from(box.querySelectorAll(".lrow")).map((r) => ({ name: r.querySelector(".l-name").value, desc: r.querySelector(".l-desc").value, qty: r.querySelector(".l-qty").value, price: r.querySelector(".l-price").value }));
+        const a = readAdjust(m, "e-"), g = (id) => m.q(id).value;
+        const empty = !g("#e-client").trim() && !g("#e-email").trim() && !g("#e-phone").trim() && !g("#e-notes").trim() && rows.every((x) => !x.name.trim() && !x.price && !x.desc.trim());
+        if (empty) localStorage.removeItem(dKey);
+        else localStorage.setItem(dKey, JSON.stringify({ client: g("#e-client"), email: g("#e-email"), phone: g("#e-phone"), bookingRow: +g("#e-book") || 0, date: g("#e-date"), due: g("#e-due"), notes: g("#e-notes"), discount: a.discount, taxes: a.taxes, items: rows }));
+      } catch (e) { /* storage unavailable */ }
+    };
     const recalc = () => {
+      persist();
       const a = readAdjust(m, "e-"), t = totals(readLines(box), a.discount, a.taxes);
       m.q("#e-total").innerHTML = "Subtotal " + cash(t.subtotal) + (t.discount ? " · Discount −" + cash(t.discount) : "") + t.taxes.map((x) => " · " + A.esc(x.name) + " " + cash(x.amount)).join("") + "<br><b>Total " + cash(t.total) + "</b>";
     };
@@ -224,10 +240,12 @@
       const d = { type, client, email: m.q("#e-email").value.trim(), phone: m.q("#e-phone").value.trim(), bookingRow: +m.q("#e-book").value || 0, items, date: m.q("#e-date").value, due: m.q("#e-due").value, notes: m.q("#e-notes").value.trim(), discount: a.discount, taxes: a.taxes, send };
       if (existing) d.row = existing.row;
       const j = await A.api("admin_inv_save", d);
-      if (j.ok) { m.close(); A.toast((est ? "Estimate #" : "Invoice #") + j.number + (j.sent ? " saved and emailed" : " saved")); load(true); }
+      if (j.ok) { dead = true; try { localStorage.removeItem(dKey); } catch (e) { /* ignore */ } m.close(); A.toast((est ? "Estimate #" : "Invoice #") + j.number + (j.sent ? " saved and emailed" : " saved")); load(true); }
       else m.q("#e-err").textContent = j.error === "no_email" ? "Saved, but there's no valid email address to send it to." : j.error === "locked" ? "This invoice can't be changed any more." : j.error === "invalid_input" ? "Check the details. The email address may be wrong." : "Couldn't save. Try again.";
       if (j.error === "no_email") load(true);
     });
+    const dis = m.q("#e-discard");
+    if (dis) dis.addEventListener("click", () => { dead = true; try { localStorage.removeItem(dKey); } catch (e) { /* ignore */ } m.close(); });
     m.q("#e-save").addEventListener("click", save(false)); m.q("#e-send").addEventListener("click", save(true));
   }
 
