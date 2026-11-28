@@ -22,6 +22,8 @@ import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
+import org.json.JSONArray
+import org.json.JSONObject
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -502,22 +504,40 @@ private fun num(d: Double): String = if (d == Math.floor(d)) d.toLong().toString
 @Composable
 private fun InvoiceEditor(vm: MainViewModel, existing: Invoice?, type: String, prefill: Client? = null, onClose: () -> Unit) {
     val ctx = LocalContext.current
-    var client by remember { mutableStateOf(existing?.client ?: prefill?.name ?: "") }
-    var email by remember { mutableStateOf(existing?.email ?: prefill?.email ?: "") }
-    var phone by remember { mutableStateOf(existing?.phone ?: prefill?.phone ?: "") }
+    val draftOn = existing == null && prefill == null
+    val draftKey = "draft_" + type
+    val store = remember { Store.get(ctx) }
+    val draft = remember { if (draftOn) runCatching { JSONObject(store.getCache(draftKey) ?: "") }.getOrNull() else null }
+    var discarded by remember { mutableStateOf(false) }
+    var client by remember { mutableStateOf(existing?.client ?: prefill?.name ?: draft?.optString("client") ?: "") }
+    var email by remember { mutableStateOf(existing?.email ?: prefill?.email ?: draft?.optString("email") ?: "") }
+    var phone by remember { mutableStateOf(existing?.phone ?: prefill?.phone ?: draft?.optString("phone") ?: "") }
     var pickClient by remember { mutableStateOf(false) }
-    var bookingRow by remember { mutableIntStateOf(existing?.bookingRow ?: 0) }
-    var date by remember { mutableStateOf(existing?.date ?: LocalDate.now().toString()) }
-    var due by remember { mutableStateOf(existing?.due?.takeIf { it.isNotBlank() } ?: (existing?.date ?: LocalDate.now().toString())) }
-    var notes by remember { mutableStateOf(existing?.notes ?: "") }
-    val lines = remember { mutableStateListOf<EditLine>().also { l -> existing?.items?.forEach { l.add(EditLine(it.name, it.desc, num(it.qty), num(it.price))) } } }
+    var bookingRow by remember { mutableIntStateOf(existing?.bookingRow ?: draft?.optInt("bookingRow") ?: 0) }
+    var date by remember { mutableStateOf(existing?.date ?: draft?.optString("date")?.takeIf { it.isNotBlank() } ?: LocalDate.now().toString()) }
+    var due by remember { mutableStateOf(existing?.due?.takeIf { it.isNotBlank() } ?: draft?.optString("due")?.takeIf { it.isNotBlank() } ?: (existing?.date ?: LocalDate.now().toString())) }
+    var notes by remember { mutableStateOf(existing?.notes ?: draft?.optString("notes") ?: "") }
+    val lines = remember { mutableStateListOf<EditLine>().also { l -> existing?.items?.forEach { l.add(EditLine(it.name, it.desc, num(it.qty), num(it.price))) }; draft?.optJSONArray("lines")?.let { ja -> for (k in 0 until ja.length()) ja.getJSONObject(k).let { o -> l.add(EditLine(o.optString("n"), o.optString("d"), o.optString("q"), o.optString("p"))) } } } }
     var err by remember { mutableStateOf("") }
     var pickBooking by remember { mutableStateOf(false) }
     var pickItem by remember { mutableStateOf(false) }
     val fees = vm.money?.fees ?: emptyList()
-    var discType by remember { mutableStateOf(existing?.discount?.type ?: "percent") }
-    var discValue by remember { mutableStateOf(existing?.discount?.let { num(it.value) } ?: "") }
-    val taxes = remember { mutableStateListOf<EditTax>().also { l -> existing?.taxes?.forEach { l.add(EditTax(it.name, num(it.rate))) } } }
+    var discType by remember { mutableStateOf(existing?.discount?.type ?: draft?.optString("discType")?.takeIf { it.isNotBlank() } ?: "percent") }
+    var discValue by remember { mutableStateOf(existing?.discount?.let { num(it.value) } ?: draft?.optString("discValue") ?: "") }
+    val taxes = remember { mutableStateListOf<EditTax>().also { l -> existing?.taxes?.forEach { l.add(EditTax(it.name, num(it.rate))) }; draft?.optJSONArray("taxes")?.let { ja -> for (k in 0 until ja.length()) ja.getJSONObject(k).let { o -> l.add(EditTax(o.optString("n"), o.optString("r"))) } } } }
+
+    val snap = if (!draftOn) "" else JSONObject().apply {
+        put("client", client); put("email", email); put("phone", phone); put("bookingRow", bookingRow); put("date", date); put("due", due); put("notes", notes)
+        put("discType", discType); put("discValue", discValue)
+        put("lines", JSONArray().also { ja -> lines.forEach { l -> ja.put(JSONObject().put("n", l.name).put("d", l.desc).put("q", l.qty).put("p", l.price)) } })
+        put("taxes", JSONArray().also { ja -> taxes.forEach { t -> ja.put(JSONObject().put("n", t.name).put("r", t.rate)) } })
+    }.toString()
+    LaunchedEffect(snap) {
+        if (draftOn && !discarded) {
+            val empty = client.isBlank() && email.isBlank() && phone.isBlank() && notes.isBlank() && lines.all { it.name.isBlank() && it.price.isBlank() && it.desc.isBlank() }
+            store.putCache(draftKey, if (empty) "" else snap)
+        }
+    }
 
     fun save(send: Boolean) {
         val items = lines.mapNotNull { l ->
@@ -531,7 +551,7 @@ private fun InvoiceEditor(vm: MainViewModel, existing: Invoice?, type: String, p
         if (err.isNotEmpty()) return
         vm.saveInvoice(existing?.row ?: 0, type, client.trim(), email.trim(), phone.trim(), bookingRow, items, date, notes.trim(), send, discountOf(discType, discValue), taxesOf(taxes), due) { e ->
             when (e) {
-                null -> onClose()
+                null -> { discarded = true; if (draftOn) store.putCache(draftKey, ""); onClose() }
                 "no_email" -> err = "Saved, but there's no valid email address to send it to."
                 "invalid_input" -> err = "Check the details. The email address may be wrong."
                 "locked" -> err = "This invoice can't be changed any more."
@@ -544,6 +564,7 @@ private fun InvoiceEditor(vm: MainViewModel, existing: Invoice?, type: String, p
     ModalBottomSheet(onDismissRequest = onClose, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = MaterialTheme.colorScheme.surface) {
         Column(Modifier.verticalScroll(rememberScrollState()).imePadding().navigationBarsPadding().padding(horizontal = 20.dp).padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(if (existing == null) "New ${type.lowercase()}" else "Edit ${type.lowercase()} #${existing.number}", style = MaterialTheme.typography.titleLarge)
+            if (draft != null) Text("Your unsaved draft was restored.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
             if (existing == null) OutlinedButton(onClick = { pickBooking = true }, modifier = Modifier.fillMaxWidth()) { Text(if (bookingRow > 0) "Linked to a booking · change" else "Fill from a booking") }
             if (existing == null) OutlinedButton(onClick = { pickClient = true }, modifier = Modifier.fillMaxWidth()) { Text("Choose a saved client") }
             OutlinedTextField(client, { client = it }, label = { Text("Client name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
@@ -590,6 +611,7 @@ private fun InvoiceEditor(vm: MainViewModel, existing: Invoice?, type: String, p
                 OutlinedButton(onClick = { save(false) }, enabled = !vm.busy, modifier = Modifier.weight(1f).height(50.dp)) { Text("Save") }
                 Button(onClick = { save(true) }, enabled = !vm.busy, modifier = Modifier.weight(1f).height(50.dp)) { Text("Save & email") }
             }
+            if (draftOn) TextButton(onClick = { discarded = true; store.putCache(draftKey, ""); onClose() }, modifier = Modifier.fillMaxWidth()) { Text("Discard draft") }
         }
     }
 
